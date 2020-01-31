@@ -1,0 +1,14 @@
+[package]
+name = "redis-stream-core"
+version = "0.1.0"
+authors = ["bso <sergey.boyko0791@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "*"
+futures = "0.1"
+tokio = "*"
+tokio-core = "*"
+byteorder = "*"
