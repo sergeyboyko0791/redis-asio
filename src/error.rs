@@ -1,13 +1,15 @@
 use std::fmt;
+use std::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
     IncorrectConversion,
+    ConnectionError,
 }
 
 #[derive(Debug)]
 pub struct RedisCoreError {
-    error: ErrorKind,
+    pub error: ErrorKind,
     desc: String,
 }
 
@@ -33,8 +35,15 @@ impl std::error::Error for RedisCoreError {
     }
 }
 
+impl From<std::io::Error> for RedisCoreError {
+    fn from(err: std::io::Error) -> Self {
+        RedisCoreError { error: ErrorKind::ConnectionError, desc: err.description().to_string() }
+    }
+}
+
 fn to_string(err: &ErrorKind) -> &'static str {
     match err {
         ErrorKind::IncorrectConversion => "IncorrectConversion",
+        ErrorKind::ConnectionError => "ConnectionError",
     }
 }
