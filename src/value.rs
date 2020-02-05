@@ -1,4 +1,4 @@
-use crate::{RedisCoreResult, RedisCoreError, ErrorKind};
+use crate::{RedisCoreResult, RedisCoreError, RedisErrorKind};
 use std::error::Error;
 use std::fmt;
 use std::cmp::PartialEq;
@@ -98,12 +98,12 @@ impl fmt::Debug for RedisValue {
 
 fn to_conversion_error<T>(err: T) -> RedisCoreError
     where T: Error {
-    RedisCoreError::from(ErrorKind::IncorrectConversion, err.description().to_string())
+    RedisCoreError::from(RedisErrorKind::IncorrectConversion, err.description().to_string())
 }
 
 fn conversion_error_from_value<T>(src_value: &T, dst_type: &str) -> RedisCoreError
     where T: fmt::Debug {
-    RedisCoreError::from(ErrorKind::IncorrectConversion,
+    RedisCoreError::from(RedisErrorKind::IncorrectConversion,
                          format!("{:?} is not convertible to {}", src_value, dst_type))
 }
 

@@ -3,4 +3,4 @@ mod value;
 mod codec;
 
 pub use value::RedisValue;
-pub use error::{RedisCoreResult, RedisCoreError, ErrorKind};
+pub use error::{RedisCoreResult, RedisCoreError, RedisErrorKind};

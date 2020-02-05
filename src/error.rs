@@ -2,7 +2,7 @@ use std::fmt;
 use std::error::Error;
 
 #[derive(Debug, Clone)]
-pub enum ErrorKind {
+pub enum RedisErrorKind {
     IncorrectConversion,
     ConnectionError,
     ParseError,
@@ -10,14 +10,14 @@ pub enum ErrorKind {
 
 #[derive(Debug)]
 pub struct RedisCoreError {
-    pub error: ErrorKind,
+    pub error: RedisErrorKind,
     desc: String,
 }
 
 pub type RedisCoreResult<T> = Result<T, RedisCoreError>;
 
 impl RedisCoreError {
-    pub fn from(error: ErrorKind, desc: String) -> RedisCoreError {
+    pub fn from(error: RedisErrorKind, desc: String) -> RedisCoreError {
         RedisCoreError { error, desc }
     }
 }
@@ -38,14 +38,14 @@ impl std::error::Error for RedisCoreError {
 
 impl From<std::io::Error> for RedisCoreError {
     fn from(err: std::io::Error) -> Self {
-        RedisCoreError { error: ErrorKind::ConnectionError, desc: err.description().to_string() }
+        RedisCoreError { error: RedisErrorKind::ConnectionError, desc: err.description().to_string() }
     }
 }
 
-fn to_string(err: &ErrorKind) -> &'static str {
+fn to_string(err: &RedisErrorKind) -> &'static str {
     match err {
-        ErrorKind::IncorrectConversion => "IncorrectConversion",
-        ErrorKind::ConnectionError => "ConnectionError",
-        ErrorKind::ParseError => "ParseError",
+        RedisErrorKind::IncorrectConversion => "IncorrectConversion",
+        RedisErrorKind::ConnectionError => "ConnectionError",
+        RedisErrorKind::ParseError => "ParseError",
     }
 }
