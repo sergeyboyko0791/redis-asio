@@ -173,96 +173,101 @@ declare_to_int_convertible!(u64);
 declare_to_int_convertible!(isize);
 declare_to_int_convertible!(usize);
 
-#[test]
-fn common_test_from_redis_value() {
-    #[derive(PartialEq, Debug)]
-    struct ArrayNode { data: String }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    impl FromRedisValue for ArrayNode {
-        fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
-            Ok(ArrayNode { data: from_redis_value(value)? })
+    #[test]
+    fn common_test_from_redis_value() {
+        #[derive(PartialEq, Debug)]
+        struct ArrayNode { data: String }
+
+        impl FromRedisValue for ArrayNode {
+            fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+                Ok(ArrayNode { data: from_redis_value(value)? })
+            }
         }
+
+        let value = RedisValue::Array(
+            vec![RedisValue::BulkString(String::from("data1").into_bytes()),
+                 RedisValue::BulkString(String::from("data2").into_bytes())]);
+
+        let origin = vec![ArrayNode { data: String::from("data1") },
+                          ArrayNode { data: String::from("data2") }];
+        assert_eq!(origin, from_redis_value::<Vec<ArrayNode>>(&value).unwrap());
     }
 
-    let value = RedisValue::Array(
-        vec![RedisValue::BulkString(String::from("data1").into_bytes()),
-             RedisValue::BulkString(String::from("data2").into_bytes())]);
+    #[test]
+    fn test_from_nil_value() {
+        let val = RedisValue::Nil;
+        assert!(from_redis_value::<i64>(&val).is_err(), "expected Err");
+        assert!(from_redis_value::<String>(&val).is_err(), "expected Err");
+        assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
+    }
 
-    let origin = vec![ArrayNode { data: String::from("data1") },
-                      ArrayNode { data: String::from("data2") }];
-    assert_eq!(origin, from_redis_value::<Vec<ArrayNode>>(&value).unwrap());
-}
+    #[test]
+    fn test_from_ok_value() {
+        let val = RedisValue::Ok;
+        assert!(from_redis_value::<i64>(&val).is_err(), "expected Err");
+        assert!(from_redis_value::<String>(&val).is_err(), "expected Err");
+        assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
+    }
 
-#[test]
-fn test_from_nil_value() {
-    let val = RedisValue::Nil;
-    assert!(from_redis_value::<i64>(&val).is_err(), "expected Err");
-    assert!(from_redis_value::<String>(&val).is_err(), "expected Err");
-    assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
-}
+    #[test]
+    fn test_from_status_value() {
+        let val = RedisValue::Status(String::from("Status"));
+        assert_eq!(String::from("Status"), from_redis_value::<String>(&val).unwrap());
+        assert!(from_redis_value::<i64>(&val).is_err(), "expected Err");
+        assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
+    }
 
-#[test]
-fn test_from_ok_value() {
-    let val = RedisValue::Ok;
-    assert!(from_redis_value::<i64>(&val).is_err(), "expected Err");
-    assert!(from_redis_value::<String>(&val).is_err(), "expected Err");
-    assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
-}
+    #[test]
+    fn test_from_int_value() {
+        let src: i64 = std::i64::MAX - 5;
+        let val = RedisValue::Int(src);
+        assert_eq!(src as i8, from_redis_value::<i8>(&val).unwrap());
+        assert_eq!(src as u8, from_redis_value::<u8>(&val).unwrap());
+        assert_eq!(src as i16, from_redis_value::<i16>(&val).unwrap());
+        assert_eq!(src as u16, from_redis_value::<u16>(&val).unwrap());
+        assert_eq!(src as i32, from_redis_value::<i32>(&val).unwrap());
+        assert_eq!(src as u32, from_redis_value::<u32>(&val).unwrap());
+        assert_eq!(src as i64, from_redis_value::<i64>(&val).unwrap());
+        assert_eq!(src as u64, from_redis_value::<u64>(&val).unwrap());
+        assert!(from_redis_value::<String>(&val).is_err(), "expected Err");
+        assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
+    }
 
-#[test]
-fn test_from_status_value() {
-    let val = RedisValue::Status(String::from("Status"));
-    assert_eq!(String::from("Status"), from_redis_value::<String>(&val).unwrap());
-    assert!(from_redis_value::<i64>(&val).is_err(), "expected Err");
-    assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
-}
+    #[test]
+    fn test_from_bulkstring_value() {
+        let raw_data = vec![1, 2, 250, 251, 255];
+        let string_data = String::from("BulkString");
+        let val1 = RedisValue::BulkString(raw_data.clone());
+        let val2 = RedisValue::BulkString(string_data.clone().into_bytes());
 
-#[test]
-fn test_from_int_value() {
-    let src: i64 = std::i64::MAX - 5;
-    let val = RedisValue::Int(src);
-    assert_eq!(src as i8, from_redis_value::<i8>(&val).unwrap());
-    assert_eq!(src as u8, from_redis_value::<u8>(&val).unwrap());
-    assert_eq!(src as i16, from_redis_value::<i16>(&val).unwrap());
-    assert_eq!(src as u16, from_redis_value::<u16>(&val).unwrap());
-    assert_eq!(src as i32, from_redis_value::<i32>(&val).unwrap());
-    assert_eq!(src as u32, from_redis_value::<u32>(&val).unwrap());
-    assert_eq!(src as i64, from_redis_value::<i64>(&val).unwrap());
-    assert_eq!(src as u64, from_redis_value::<u64>(&val).unwrap());
-    assert!(from_redis_value::<String>(&val).is_err(), "expected Err");
-    assert!(from_redis_value::<Vec<i64>>(&val).is_err(), "expected Err");
-}
+        assert!(from_redis_value::<String>(&val1).is_err(),
+                "expected Err on cannot convert raw data to String");
+        assert_eq!(raw_data, from_redis_value::<Vec<u8>>(&val1).unwrap());
+        assert!(from_redis_value::<Vec<i8>>(&val1).is_err(), "expected Err");
+        assert!(from_redis_value::<Vec<i64>>(&val1).is_err(), "expected Err");
+        assert!(from_redis_value::<i64>(&val1).is_err(), "expected Err");
 
-#[test]
-fn test_from_bulkstring_value() {
-    let raw_data = vec![1, 2, 250, 251, 255];
-    let string_data = String::from("BulkString");
-    let val1 = RedisValue::BulkString(raw_data.clone());
-    let val2 = RedisValue::BulkString(string_data.clone().into_bytes());
+        assert_eq!(string_data, from_redis_value::<String>(&val2).unwrap());
+        assert_eq!(string_data.into_bytes(), from_redis_value::<Vec<u8>>(&val2).unwrap());
+    }
 
-    assert!(from_redis_value::<String>(&val1).is_err(),
-            "expected Err on cannot convert raw data to String");
-    assert_eq!(raw_data, from_redis_value::<Vec<u8>>(&val1).unwrap());
-    assert!(from_redis_value::<Vec<i8>>(&val1).is_err(), "expected Err");
-    assert!(from_redis_value::<Vec<i64>>(&val1).is_err(), "expected Err");
-    assert!(from_redis_value::<i64>(&val1).is_err(), "expected Err");
+    #[test]
+    fn test_from_array_value() {
+        let data
+            = vec![RedisValue::Nil,
+                   RedisValue::Ok,
+                   RedisValue::Status(String::from("Status")),
+                   RedisValue::Int(12345),
+                   RedisValue::BulkString(vec![1, 2, 3, 4, 5]),
+                   RedisValue::Array(
+                       vec![RedisValue::Int(9876),
+                            RedisValue::BulkString(String::from("BulkString").into_bytes())])];
 
-    assert_eq!(string_data, from_redis_value::<String>(&val2).unwrap());
-    assert_eq!(string_data.into_bytes(), from_redis_value::<Vec<u8>>(&val2).unwrap());
-}
-
-#[test]
-fn test_from_array_value() {
-    let data
-        = vec![RedisValue::Nil,
-               RedisValue::Ok,
-               RedisValue::Status(String::from("Status")),
-               RedisValue::Int(12345),
-               RedisValue::BulkString(vec![1, 2, 3, 4, 5]),
-               RedisValue::Array(
-                   vec![RedisValue::Int(9876),
-                        RedisValue::BulkString(String::from("BulkString").into_bytes())])];
-
-    let val1 = RedisValue::Array(data.clone());
-    assert_eq!(data, from_redis_value::<Vec<RedisValue>>(&val1).unwrap());
+        let val1 = RedisValue::Array(data.clone());
+        assert_eq!(data, from_redis_value::<Vec<RedisValue>>(&val1).unwrap());
+    }
 }

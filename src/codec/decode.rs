@@ -1,5 +1,5 @@
 use crate::{RedisCoreError, RedisErrorKind};
-use crate::codec::{resp_start_bytes, RespInternalValue, CRLF, CRLF_LEN};
+use crate::codec::RespInternalValue;
 use std::io::Cursor;
 use std::error::Error;
 use byteorder::ReadBytesExt;
@@ -10,6 +10,18 @@ struct ParseResult<T> {
 }
 
 type OptParseResult<T> = Option<ParseResult<T>>;
+
+mod resp_start_bytes {
+    pub const ERROR: u8 = b'-';
+    pub const STATUS: u8 = b'+';
+    pub const INT: u8 = b':';
+    pub const BULK_STRING: u8 = b'$';
+    pub const ARRAY: u8 = b'*';
+}
+
+const CRLF: (u8, u8) = (b'\r', b'\n');
+// "\r\n".len() == 2
+const CRLF_LEN: usize = 2;
 
 fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
     let value_id = match Cursor::new(data).read_u8() {
@@ -210,167 +222,173 @@ fn parse_simple_int(data: &[u8]) -> Result<OptParseResult<i64>, RedisCoreError> 
     Ok(Some(ParseResult { value, value_src_len }))
 }
 
-#[test]
-fn test_parse_status() {
-    let data = Vec::from("+Ok\r\n");
-    let ParseResult { value, value_src_len }
-        = parse_resp_value(data.as_slice()).unwrap().unwrap();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    assert_eq!(RespInternalValue::Status("Ok".to_string()), value);
-    assert_eq!(data.len(), value_src_len);
+    #[test]
+    fn test_parse_status() {
+        let data = Vec::from("+Ok\r\n");
+        let ParseResult { value, value_src_len }
+            = parse_resp_value(data.as_slice()).unwrap().unwrap();
 
-    assert!(parse_resp_value(Vec::from("+Ok\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    assert!(parse_resp_value(Vec::from("+Ok\r$").as_mut_slice()).is_err(), "expected Err");
-}
+        assert_eq!(RespInternalValue::Status("Ok".to_string()), value);
+        assert_eq!(data.len(), value_src_len);
 
-#[test]
-fn test_parse_error() {
-    let data = Vec::from("-Error\r\n");
-    let ParseResult { value, value_src_len }
-        = parse_resp_value(data.as_slice()).unwrap().unwrap();
+        assert!(parse_resp_value(Vec::from("+Ok\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        assert!(parse_resp_value(Vec::from("+Ok\r$").as_mut_slice()).is_err(), "expected Err");
+    }
 
-    assert_eq!(RespInternalValue::Error("Error".to_string()), value);
-    assert_eq!(data.len(), value_src_len);
+    #[test]
+    fn test_parse_error() {
+        let data = Vec::from("-Error\r\n");
+        let ParseResult { value, value_src_len }
+            = parse_resp_value(data.as_slice()).unwrap().unwrap();
 
-    assert!(parse_resp_value(Vec::from("-Error\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    assert!(parse_resp_value(Vec::from("-Error\r$").as_mut_slice()).is_err(), "expected Err");
-}
+        assert_eq!(RespInternalValue::Error("Error".to_string()), value);
+        assert_eq!(data.len(), value_src_len);
 
-#[test]
-fn test_parse_int() {
-    let data = Vec::from(":-12345\r\n");
-    let ParseResult { value, value_src_len }
-        = parse_resp_value(data.as_slice()).unwrap().unwrap();
+        assert!(parse_resp_value(Vec::from("-Error\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        assert!(parse_resp_value(Vec::from("-Error\r$").as_mut_slice()).is_err(), "expected Err");
+    }
 
-    assert_eq!(RespInternalValue::Int(-12345i64), value);
-    assert_eq!(data.len(), value_src_len);
+    #[test]
+    fn test_parse_int() {
+        let data = Vec::from(":-12345\r\n");
+        let ParseResult { value, value_src_len }
+            = parse_resp_value(data.as_slice()).unwrap().unwrap();
 
-    assert!(parse_resp_value(Vec::from(":-12345\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    assert!(parse_resp_value(Vec::from(":-12345\r$").as_mut_slice()).is_err(), "expected Err");
-    assert!(parse_resp_value(Vec::from(":-12X45\r\n").as_mut_slice()).is_err(), "expected Err");
-}
+        assert_eq!(RespInternalValue::Int(-12345i64), value);
+        assert_eq!(data.len(), value_src_len);
 
-#[test]
-fn test_parse_bulkstring() {
-    // $ - message type identifier
-    // 8\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
-    // foo\r\nbar - the actual string data.
-    // \r\n - a final CRLF.
-    let origin_msg = "foo\r\nbar".to_string();
+        assert!(parse_resp_value(Vec::from(":-12345\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        assert!(parse_resp_value(Vec::from(":-12345\r$").as_mut_slice()).is_err(), "expected Err");
+        assert!(parse_resp_value(Vec::from(":-12X45\r\n").as_mut_slice()).is_err(), "expected Err");
+    }
 
-    let mut raw_data = format!("${}\r\n{}\r\n", origin_msg.len(), origin_msg).into_bytes();
-    let expected_value_len = raw_data.len();
-    raw_data.append(&mut "trash".as_bytes().to_vec());
+    #[test]
+    fn test_parse_bulkstring() {
+        // $ - message type identifier
+        // 8\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
+        // foo\r\nbar - the actual string data.
+        // \r\n - a final CRLF.
+        let origin_msg = "foo\r\nbar".to_string();
 
-    let ParseResult { value, value_src_len }
-        = parse_resp_value(raw_data.as_slice()).unwrap().unwrap();
+        let mut raw_data = format!("${}\r\n{}\r\n", origin_msg.len(), origin_msg).into_bytes();
+        let expected_value_len = raw_data.len();
+        raw_data.append(&mut "trash".as_bytes().to_vec());
 
-    assert_eq!(RespInternalValue::BulkString(origin_msg.into_bytes()), value);
-    assert_eq!(expected_value_len, value_src_len);
+        let ParseResult { value, value_src_len }
+            = parse_resp_value(raw_data.as_slice()).unwrap().unwrap();
 
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("$7\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("$7\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incorrect message without CRLF:
-    // 7\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
-    // 1234567 - the actual string data, the len = 7.
-    // %\n - incorrect CRLF characters (expected \r\n).
-    assert!(parse_resp_value(Vec::from("$7\r\n1234567\r$").as_mut_slice()).is_err(), "expected Err");
-}
+        assert_eq!(RespInternalValue::BulkString(origin_msg.into_bytes()), value);
+        assert_eq!(expected_value_len, value_src_len);
 
-#[test]
-fn test_parse_bulkstring_nil() {
-    // $ - message type identifier
-    // -10\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
-    // actual there is no string data.
-    // \r\n - a final CRLF.
-    let mut raw_data = Vec::from("$-10\r\n\r\n");
-    let expected_value_len = raw_data.len();
-    raw_data.append(&mut "trash".as_bytes().to_vec());
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("$7\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("$7\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incorrect message without CRLF:
+        // 7\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
+        // 1234567 - the actual string data, the len = 7.
+        // %\n - incorrect CRLF characters (expected \r\n).
+        assert!(parse_resp_value(Vec::from("$7\r\n1234567\r$").as_mut_slice()).is_err(), "expected Err");
+    }
 
-    let ParseResult { value, value_src_len }
-        = parse_resp_value(raw_data.as_slice()).unwrap().unwrap();
+    #[test]
+    fn test_parse_bulkstring_nil() {
+        // $ - message type identifier
+        // -10\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
+        // actual there is no string data.
+        // \r\n - a final CRLF.
+        let mut raw_data = Vec::from("$-10\r\n\r\n");
+        let expected_value_len = raw_data.len();
+        raw_data.append(&mut "trash".as_bytes().to_vec());
 
-    assert_eq!(RespInternalValue::Nil, value);
-    assert_eq!(expected_value_len, value_src_len);
+        let ParseResult { value, value_src_len }
+            = parse_resp_value(raw_data.as_slice()).unwrap().unwrap();
 
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("$-10\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("$-10\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incorrect message without CRLF
-    assert!(parse_resp_value(Vec::from("$-10\r\n%$").as_mut_slice()).is_err(), "expected Err");
+        assert_eq!(RespInternalValue::Nil, value);
+        assert_eq!(expected_value_len, value_src_len);
+
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("$-10\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("$-10\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incorrect message without CRLF
+        assert!(parse_resp_value(Vec::from("$-10\r\n%$").as_mut_slice()).is_err(), "expected Err");
 //    assert!(parse_bulkstring(Vec::from("-12X45\r\n").as_mut_slice()).is_err(), "expected Err");
+    }
+
+    #[test]
+    fn test_parse_array() {
+        let mut nil_value_data = Vec::from("$-1\r\n\r\n");
+        // "Error message"
+        let mut error_value_data = Vec::from("-Error message\r\n");
+        // "Status message"
+        let mut status_value_data = Vec::from("+Status message\r\n");
+        // -1423
+        let mut int_value_data = Vec::from(":-1423\r\n");
+        // "Bulk\r\nstring\tmessage"
+        let mut bulkstring_value_data = Vec::from("$20\r\nBulk\r\nstring\tmessage\r\n");
+        // [1, 2, 3]
+        let mut array_value_data = Vec::from("*3\r\n:1\r\n:2\r\n:3\r\n");
+
+        let mut array_data: Vec<u8> = Vec::from("*6\r\n");
+        array_data.append(&mut nil_value_data);
+        array_data.append(&mut error_value_data);
+        array_data.append(&mut status_value_data);
+        array_data.append(&mut int_value_data);
+        array_data.append(&mut bulkstring_value_data);
+        array_data.append(&mut array_value_data);
+
+        let expected_value_len = array_data.len();
+
+        array_data.append(&mut "trash".as_bytes().to_vec());
+
+        let origin = RespInternalValue::Array(
+            vec![RespInternalValue::Nil,
+                 RespInternalValue::Error("Error message".to_string()),
+                 RespInternalValue::Status("Status message".to_string()),
+                 RespInternalValue::Int(-1423),
+                 RespInternalValue::BulkString("Bulk\r\nstring\tmessage".as_bytes().to_vec()),
+                 RespInternalValue::Array(vec![RespInternalValue::Int(1),
+                                               RespInternalValue::Int(2),
+                                               RespInternalValue::Int(3)])
+            ]);
+        let ParseResult { value, value_src_len }
+            = parse_resp_value(&array_data).unwrap().unwrap();
+        assert_eq!(origin, value);
+        assert_eq!(expected_value_len, value_src_len);
+    }
+
+    #[test]
+    fn test_parse_array_empty() {
+        let mut array_data: Vec<u8> = Vec::from("0\r\n");
+
+        let expected_value_len = array_data.len();
+
+        array_data.append(&mut "trash".as_bytes().to_vec());
+
+        let origin = RespInternalValue::Array(Vec::new());
+        let ParseResult { value, value_src_len }
+            = parse_array(&array_data).unwrap().unwrap();
+        assert_eq!(origin, value);
+        assert_eq!(expected_value_len, value_src_len);
+    }
+
+    #[test]
+    fn test_parse_array_boundaries() {
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("*7\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("*7\r\n*").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incomplete message
+        assert!(parse_resp_value(Vec::from("*1\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        // receive incorrect message: array's len ends without CRLF
+        assert!(parse_resp_value(Vec::from("*1\r#$").as_mut_slice()).is_err(), "expected Err");
+        // receive incorrect message: array's element ends without CRLF
+        assert!(parse_resp_value(Vec::from("*1\r\n:12\r$").as_mut_slice()).is_err(), "expected Err");
+    }
 }
 
-#[test]
-fn test_parse_array() {
-    let mut nil_value_data = Vec::from("$-1\r\n\r\n");
-    // "Error message"
-    let mut error_value_data = Vec::from("-Error message\r\n");
-    // "Status message"
-    let mut status_value_data = Vec::from("+Status message\r\n");
-    // -1423
-    let mut int_value_data = Vec::from(":-1423\r\n");
-    // "Bulk\r\nstring\tmessage"
-    let mut bulkstring_value_data = Vec::from("$20\r\nBulk\r\nstring\tmessage\r\n");
-    // [1, 2, 3]
-    let mut array_value_data = Vec::from("*3\r\n:1\r\n:2\r\n:3\r\n");
-
-    let mut array_data: Vec<u8> = Vec::from("*6\r\n");
-    array_data.append(&mut nil_value_data);
-    array_data.append(&mut error_value_data);
-    array_data.append(&mut status_value_data);
-    array_data.append(&mut int_value_data);
-    array_data.append(&mut bulkstring_value_data);
-    array_data.append(&mut array_value_data);
-
-    let expected_value_len = array_data.len();
-
-    array_data.append(&mut "trash".as_bytes().to_vec());
-
-    let origin = RespInternalValue::Array(
-        vec![RespInternalValue::Nil,
-             RespInternalValue::Error("Error message".to_string()),
-             RespInternalValue::Status("Status message".to_string()),
-             RespInternalValue::Int(-1423),
-             RespInternalValue::BulkString("Bulk\r\nstring\tmessage".as_bytes().to_vec()),
-             RespInternalValue::Array(vec![RespInternalValue::Int(1),
-                                           RespInternalValue::Int(2),
-                                           RespInternalValue::Int(3)])
-        ]);
-    let ParseResult { value, value_src_len }
-        = parse_resp_value(&array_data).unwrap().unwrap();
-    assert_eq!(origin, value);
-    assert_eq!(expected_value_len, value_src_len);
-}
-
-#[test]
-fn test_parse_array_empty() {
-    let mut array_data: Vec<u8> = Vec::from("0\r\n");
-
-    let expected_value_len = array_data.len();
-
-    array_data.append(&mut "trash".as_bytes().to_vec());
-
-    let origin = RespInternalValue::Array(Vec::new());
-    let ParseResult { value, value_src_len }
-        = parse_array(&array_data).unwrap().unwrap();
-    assert_eq!(origin, value);
-    assert_eq!(expected_value_len, value_src_len);
-}
-
-#[test]
-fn test_parse_array_boundaries() {
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("*7\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("*7\r\n*").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incomplete message
-    assert!(parse_resp_value(Vec::from("*1\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-    // receive incorrect message: array's len ends without CRLF
-    assert!(parse_resp_value(Vec::from("*1\r#$").as_mut_slice()).is_err(), "expected Err");
-    // receive incorrect message: array's element ends without CRLF
-    assert!(parse_resp_value(Vec::from("*1\r\n:12\r$").as_mut_slice()).is_err(), "expected Err");
-}

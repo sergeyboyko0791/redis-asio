@@ -2,6 +2,7 @@ use crate::{RedisCoreError, RedisErrorKind};
 use tokio_io::codec::{Encoder, Decoder};
 use bytes::BytesMut;
 
+mod encode;
 mod decode;
 
 
@@ -35,15 +36,3 @@ impl Decoder for RedisCodec {
         Ok(None)
     }
 }
-
-mod resp_start_bytes {
-    pub const ERROR: u8 = b'-';
-    pub const STATUS: u8 = b'+';
-    pub const INT: u8 = b':';
-    pub const BULK_STRING: u8 = b'$';
-    pub const ARRAY: u8 = b'*';
-}
-
-const CRLF: (u8, u8) = (b'\r', b'\n');
-// "\r\n".len() == 2
-const CRLF_LEN: usize = 2;
