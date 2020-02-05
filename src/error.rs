@@ -5,6 +5,7 @@ use std::error::Error;
 pub enum ErrorKind {
     IncorrectConversion,
     ConnectionError,
+    ParseError,
 }
 
 #[derive(Debug)]
@@ -45,5 +46,6 @@ fn to_string(err: &ErrorKind) -> &'static str {
     match err {
         ErrorKind::IncorrectConversion => "IncorrectConversion",
         ErrorKind::ConnectionError => "ConnectionError",
+        ErrorKind::ParseError => "ParseError",
     }
 }
