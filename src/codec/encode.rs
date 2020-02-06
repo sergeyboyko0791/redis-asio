@@ -3,9 +3,8 @@ use crate::codec::RespInternalValue;
 use std::io::Cursor;
 use std::error::Error;
 use byteorder::WriteBytesExt;
-use bytes::BytesMut;
 
-fn encode_resp_value(value: RespInternalValue) -> Vec<u8> {
+pub fn encode_resp_value(value: RespInternalValue) -> Vec<u8> {
     match value {
         RespInternalValue::Nil => "$-1\r\n".as_bytes().to_vec(),
         RespInternalValue::Error(x) => format!("-{}\r\n", x).into_bytes(),

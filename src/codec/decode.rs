@@ -4,26 +4,14 @@ use std::io::Cursor;
 use std::error::Error;
 use byteorder::ReadBytesExt;
 
-struct ParseResult<T> {
-    value: T,
-    value_src_len: usize,
+pub struct ParseResult<T> {
+    pub value: T,
+    pub value_src_len: usize,
 }
 
-type OptParseResult<T> = Option<ParseResult<T>>;
+pub type OptParseResult<T> = Option<ParseResult<T>>;
 
-mod resp_start_bytes {
-    pub const ERROR: u8 = b'-';
-    pub const STATUS: u8 = b'+';
-    pub const INT: u8 = b':';
-    pub const BULK_STRING: u8 = b'$';
-    pub const ARRAY: u8 = b'*';
-}
-
-const CRLF: (u8, u8) = (b'\r', b'\n');
-// "\r\n".len() == 2
-const CRLF_LEN: usize = 2;
-
-fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+pub fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
     let value_id = match Cursor::new(data).read_u8() {
         Ok(x) => x,
         Err(_) => return Ok(None)
@@ -51,6 +39,19 @@ fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, Re
         )
     )
 }
+
+
+mod resp_start_bytes {
+    pub const ERROR: u8 = b'-';
+    pub const STATUS: u8 = b'+';
+    pub const INT: u8 = b':';
+    pub const BULK_STRING: u8 = b'$';
+    pub const ARRAY: u8 = b'*';
+}
+
+const CRLF: (u8, u8) = (b'\r', b'\n');
+// "\r\n".len() == 2
+const CRLF_LEN: usize = 2;
 
 fn parse_error(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
     parse_simple_string(data)
@@ -130,12 +131,6 @@ fn parse_bulkstring(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, Re
 }
 
 fn parse_array(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
-    let does_end_with_crlf = |data: &[u8]| data.ends_with(&[CRLF.0, CRLF.1]);
-    let make_parse_error =
-        || RedisCoreError::from(
-            RedisErrorKind::ParseError,
-            "An  within a bulk string does not end with the CRLF".to_string());
-
     let ParseResult { value: array_len, value_src_len: len_len } =
         match parse_simple_int(data)? {
             Some(x) => x,
@@ -284,9 +279,9 @@ mod tests {
         assert_eq!(RespInternalValue::BulkString(origin_msg.into_bytes()), value);
         assert_eq!(expected_value_len, value_src_len);
 
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("$7\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("$7\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
         // receive incorrect message without CRLF:
         // 7\r\n - the number of bytes composing the string (a prefixed length), terminated by CRLF.
@@ -311,9 +306,9 @@ mod tests {
         assert_eq!(RespInternalValue::Nil, value);
         assert_eq!(expected_value_len, value_src_len);
 
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("$-10\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("$-10\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
         // receive incorrect message without CRLF
         assert!(parse_resp_value(Vec::from("$-10\r\n%$").as_mut_slice()).is_err(), "expected Err");
@@ -379,11 +374,11 @@ mod tests {
 
     #[test]
     fn test_parse_array_boundaries() {
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("*7\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("*7\r\n*").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-        // receive incomplete message
+        // receive an incomplete message
         assert!(parse_resp_value(Vec::from("*1\r\n$").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
         // receive incorrect message: array's len ends without CRLF
         assert!(parse_resp_value(Vec::from("*1\r#$").as_mut_slice()).is_err(), "expected Err");
