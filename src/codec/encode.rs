@@ -1,8 +1,4 @@
-use crate::{RedisCoreError, RedisErrorKind};
 use crate::codec::RespInternalValue;
-use std::io::Cursor;
-use std::error::Error;
-use byteorder::WriteBytesExt;
 
 pub fn encode_resp_value(value: RespInternalValue) -> Vec<u8> {
     match value {

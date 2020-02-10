@@ -9,7 +9,12 @@ edition = "2018"
 [dependencies]
 serde = "*"
 futures = "0.1"
-tokio = "*"
-tokio-io = "*"
+tokio = "0.1"
+tokio-io = "0.1"
+tokio-tcp = "0.1"
+tokio-core = "0.1"
 byteorder = "*"
-bytes = "*"
+bytes = "0.4.12"
+
+#[target."cfg(unix)".dependencies.tokio-uds]
+#version = "0.2"

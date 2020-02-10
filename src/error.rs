@@ -6,6 +6,7 @@ pub enum RedisErrorKind {
     IncorrectConversion,
     ConnectionError,
     ParseError,
+    ReceiveError,
 }
 
 #[derive(Debug)]
@@ -47,5 +48,6 @@ fn to_string(err: &RedisErrorKind) -> &'static str {
         RedisErrorKind::IncorrectConversion => "IncorrectConversion",
         RedisErrorKind::ConnectionError => "ConnectionError",
         RedisErrorKind::ParseError => "ParseError",
+        RedisErrorKind::ReceiveError => "ReceiveError"
     }
 }
