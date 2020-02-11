@@ -1,10 +1,10 @@
 pub mod error;
 mod value;
 mod codec;
-mod client;
+mod stream;
 
 pub use value::RedisValue;
 pub use error::{RedisCoreResult, RedisCoreError, RedisErrorKind};
-pub use client::connect;
+pub use stream::connect;
 
 use codec::{RedisCodec, RespInternalValue};

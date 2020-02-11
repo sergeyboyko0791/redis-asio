@@ -5,7 +5,7 @@ use std::cmp::PartialEq;
 use std::str::FromStr;
 use core::num::ParseIntError;
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RedisValue {
     Nil,
     Ok,
@@ -90,11 +90,12 @@ impl<T: FromRedisValue> FromRedisValue for Vec<T> {
     }
 }
 
-impl fmt::Debug for RedisValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", to_string(&self))
-    }
-}
+// TODO revert it
+//impl fmt::Debug for RedisValue {
+//    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//        write!(f, "{:?}", to_string(&self))
+//    }
+//}
 
 fn to_conversion_error<T>(err: T) -> RedisCoreError
     where T: Error {

@@ -39,30 +39,15 @@ impl<S> RedisCoreClient<S>
 //}
 
 pub fn connect(addr: SocketAddr) -> impl Future<Item=(), Error=()> + Send + 'static {
-//    let stream = TcpStream::connect(&addr)
-//        .map_err(|err|
-//            RedisCoreError::from(RedisErrorKind::ConnectionError,
-//                                 format!("Could not connect to the {}", &addr)))
-//        .map(|stream| {
-//            let framed = stream.framed(RedisCodec {});
-//            let f = framed.and_then(|res| {
-//                from_resp_internal_value(res)
-//            });
-//            f
-//        });
-//    let s: Box<Future<Item=_, Error=_>> = Box::new(stream);
-//    stream;
-
-
     TcpStream::connect(&addr)
         .map_err(|err| println!("Error 1: {:?}", err))
 //        .map_err(|err|
 //            RedisCoreError::from(RedisErrorKind::ConnectionError,
 //                                 format!("Could not connect to the {}", &addr)))
-        .and_then(process_stream)
+        .and_then(on_stream_established)
 }
 
-pub fn from_resp_internal_value(resp_value: RespInternalValue) -> Result<RedisValue, RedisCoreError> {
+pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue, RedisCoreError> {
     match resp_value {
         RespInternalValue::Nil => Ok(RedisValue::Nil),
         RespInternalValue::Error(x) => Err(RedisCoreError::from(RedisErrorKind::ReceiveError, x)),
@@ -75,42 +60,61 @@ pub fn from_resp_internal_value(resp_value: RespInternalValue) -> Result<RedisVa
         RespInternalValue::Array(x) => {
             let mut res: Vec<RedisValue> = Vec::with_capacity(x.len());
             for val in x.into_iter() {
-                res.push(from_resp_internal_value(val)?);
+                res.push(redis_value_from_resp(val)?);
             }
             Ok(RedisValue::Array(res))
         }
     }
 }
 
-fn process_stream(stream: TcpStream) -> impl Future<Item=(), Error=()> + Send + 'static {
+// Send first subscribe request and run recursive server message processing
+fn on_stream_established(stream: TcpStream)
+                         -> impl Future<Item=(), Error=()> + Send + 'static {
     let framed = stream.framed(RedisCodec {});
-    let (tx, rx) = framed.split();
-    let from_srv: Box<dyn Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static> = Box::new(rx);
-    let to_srv: Box<dyn Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static> = Box::new(tx);
+    let (to_srv, from_srv) = framed.split();
 
+    // send first subscription request
     to_srv
         .send(listen_until())
         .map_err(|err| ()) // TODO delete it
-        .and_then(move |mut to_srv|
-            receive_and_send_recursive(from_srv, to_srv)
+        .and_then(
+            move |mut to_srv| {
+                // run recursive server message processing
+                receive_and_send_recursive(from_srv, to_srv)
+                    .for_each(|msg| Ok(println!("Received message: {:?}", msg)))
+                    .map_err(|err| ())
+            }
         )
 }
 
 fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T)
-                                    -> impl Future<Item=(), Error=()> + Send + 'static
+                                    -> impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static,
           T: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static {
     let (tx,
         rx)
         = mpsc::channel::<RespInternalValue>(16);
 
-    let output = forward_from_channel_to_srv(to_srv, rx);
+    let output = fwd_from_channel_to_srv(to_srv, rx);
     let input = process_from_srv_and_notify_channel(from_srv, tx);
-    input.select(output).map(|(_, _)| ()).map_err(|(err, _)| ())
+
+    // We have the following conditions:
+    // 1) a return stream should include both output future and input stream
+    // 2) select() method requires equal types of Item within two merging streams,
+    // 3) a return stream should has Item = RedisValue
+    // 4) output future should not influence a return stream
+    //
+    // change Item to Option<RedisValue> within the input stream and output future
+    // where output future will not influence a selected stream (via filter_map())
+
+    let output = output.map(|_| None);
+    let input = input.map(|x| Some(x));
+
+    input.select(output.into_stream()).filter_map(|x| x)
 }
 
-fn forward_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
-                                  -> impl Future<Item=(), Error=()> + Send + 'static
+fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
+                              -> impl Future<Item=(), Error=RedisCoreError> + Send + 'static
     where T: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static {
     rx
         .map_err(|err| redis_core_error_new())
@@ -118,22 +122,27 @@ fn forward_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
             to_srv.send(msg)
         })
         .map(|_| ())
-        .map_err(|_| ())
 }
 
 fn process_from_srv_and_notify_channel<F>(from_srv: F, tx: Sender<RespInternalValue>)
-                                          -> impl Future<Item=(), Error=()> + Send + 'static
+                                          -> impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static
 {
     from_srv
-        .map_err(|err| ())
         .and_then(move |msg| {
-            println!("Receive message: {:?}", &msg);
             // TODO change the type of channel from RespInternalValue to an flag
             tx.clone().send(listen_until())
-                .map(|x| msg)
-                .map_err(|err| ())
-        }).for_each(|msg| Ok(()))
+                .then(|res| {
+                    match res {
+                        Ok(_) => (),
+                        Err(err) => return Err(redis_core_error_from(err))
+                    }
+                    // convert RespInternalValue to RedisValue
+                    // note: the function returns an error if the Resp value is Error
+                    //       else returns RedisValue
+                    redis_value_from_resp(msg)
+                })
+        })
 }
 
 /// TODO delete it after debug
@@ -151,7 +160,7 @@ fn redis_core_error_new() -> RedisCoreError
                          format!("Something went wrong"))
 }
 
-/// TODO delete it after debug
+/// TODO refactor
 fn listen_until() -> RespInternalValue
 {
     RespInternalValue::Array(
@@ -170,14 +179,3 @@ fn test_connect() {
     tokio::run(connect("127.0.0.1:6379".parse::<SocketAddr>().unwrap()));
 }
 
-
-// subscribe the to_srv on the unbounded_receiver
-//                    unbounded_receiver.fold(to_srv, |to_srv, msg| to_srv.send(msg));
-//
-//                    from_srv.for_each(|message| {
-//                        println!("Response: {:?}", &message);
-//                        unbounded_sender.clone().send_all(listen_until()).then(|res| Ok(()))
-//                    })
-//                }).map_err(|err| println!("Error: {:?}", err))
-//        })
-//        .map_err(|err| ())
