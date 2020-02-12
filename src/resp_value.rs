@@ -11,6 +11,21 @@ pub enum RespInternalValue {
 }
 
 impl RespInternalValue {
+    pub fn from_redis_value(value: RedisValue) -> RespInternalValue {
+        match value {
+            RedisValue::Nil => RespInternalValue::Nil,
+            RedisValue::Ok => RespInternalValue::Status("Ok".to_string()),
+            RedisValue::Status(x) => RespInternalValue::Status(x),
+            RedisValue::Int(x) => RespInternalValue::Int(x),
+            RedisValue::BulkString(x) => RespInternalValue::BulkString(x),
+            RedisValue::Array(x) =>
+                RespInternalValue::Array(
+                    x.into_iter()
+                        .map(|val| RespInternalValue::from_redis_value(val))
+                        .collect())
+        }
+    }
+
     pub fn into_redis_value(self) -> Result<RedisValue, RedisCoreError> {
         match self {
             RespInternalValue::Nil => Ok(RedisValue::Nil),

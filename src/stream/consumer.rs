@@ -1,7 +1,7 @@
 // todo remove it to tests
 extern crate tokio;
 
-use crate::{RedisCodec, RespInternalValue, RedisCoreError, RedisErrorKind, RedisValue};
+use crate::*;
 use super::RedisStreamOptions;
 
 use tokio_tcp::TcpStream;
@@ -15,7 +15,6 @@ use futures::sync::mpsc::unbounded;
 use futures::sync::mpsc;
 use futures::sync::mpsc::{Sender, Receiver};
 use bytes::BytesMut;
-use std::error::Error;
 
 
 pub struct RedisStreamConsumer {
@@ -76,7 +75,7 @@ fn on_stream_established(stream: TcpStream, stream_info: RedisStreamOptions)
     // send first subscription request
     to_srv
         .send(listen_until(stream_info.clone()))
-        .map(move |mut to_srv| {
+        .map(move |to_srv| {
             // run recursive server message processing
             RedisStreamConsumer::new(receive_and_send_recursive(from_srv, to_srv, stream_info))
         }).map_err(|err| redis_core_error_from(err))
@@ -113,7 +112,7 @@ fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
                               -> impl Future<Item=(), Error=RedisCoreError> + Send + 'static
     where T: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static {
     rx
-        .map_err(|err| redis_core_error_new())
+        .map_err(|err| redis_core_error_new()) // TODO
         .fold(to_srv, |to_srv, msg| {
             to_srv.send(msg)
         })
@@ -158,18 +157,32 @@ fn redis_core_error_new() -> RedisCoreError
                          format!("Something went wrong"))
 }
 
-/// TODO refactor
 fn listen_until(stream_info: RedisStreamOptions) -> RespInternalValue
 {
-    RespInternalValue::Array(
-        vec![
-            RespInternalValue::BulkString("xread".as_bytes().to_vec()),
-            RespInternalValue::BulkString("block".as_bytes().to_vec()),
-            RespInternalValue::BulkString("0".as_bytes().to_vec()),
-            RespInternalValue::BulkString("streams".as_bytes().to_vec()),
-            RespInternalValue::BulkString("test_stream".as_bytes().to_vec()),
-            RespInternalValue::BulkString("$".as_bytes().to_vec())
-        ])
+    let RedisStreamOptions { stream, group } = stream_info;
+    let cmd =
+        match &group {
+            Some(_) => "XREADGROUP",
+            _ => "XREAD",
+        };
+
+    let mut cmd = RedisCommand::new(cmd);
+    cmd =
+        match &group {
+            Some(RedisGroup { group, consumer }) =>
+                cmd.arg("GROUP")
+                    .arg(group.as_str())
+                    .arg(consumer.as_str()),
+            _ => cmd
+        };
+
+    RespInternalValue::from_redis_value(
+        cmd.arg("BLOCK")
+            .arg("0") // block until next pkt
+            .arg("STREAMS")
+            .arg(stream.as_str())
+            .arg("$") // receive only new messages
+            .into_to_redis_value())
 }
 
 #[test]

@@ -15,12 +15,16 @@ pub struct RedisCoreError {
     desc: String,
 }
 
+// TODO rename all Result<T, RedisCoreError> uses to the type
 pub type RedisCoreResult<T> = Result<T, RedisCoreError>;
 
 impl RedisCoreError {
+    // TODO rename to new()
     pub fn from(error: RedisErrorKind, desc: String) -> RedisCoreError {
         RedisCoreError { error, desc }
     }
+
+    // TODO add from()
 }
 
 impl fmt::Display for RedisCoreError {
