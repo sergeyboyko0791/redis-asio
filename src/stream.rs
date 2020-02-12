@@ -15,36 +15,50 @@ use futures::sync::mpsc::{Sender, Receiver};
 use bytes::BytesMut;
 use std::error::Error;
 
-struct RedisCoreClient<S>
-    where S: Stream {
-    stream: S
+#[derive(Clone)]
+pub struct RedisStreamInfo {
+    stream: String,
+    group: Option<String>,
 }
 
-//impl<S> RedisCoreClient<S>
-//    where S: Stream {
-//    pub fn new(stream: S) -> RedisCoreClient<S> {
-//        RedisCoreClient { stream }
-//    }
-//}
+impl RedisStreamInfo {
+    pub fn new(stream: String) -> RedisStreamInfo {
+        RedisStreamInfo { stream, group: None }
+    }
 
-impl<S> RedisCoreClient<S>
-    where S: Stream<Item=RespInternalValue, Error=RedisCoreError> {
-    pub fn new(stream: S) -> RedisCoreClient<S> {
-        RedisCoreClient { stream }
+    pub fn with_group(stream: String, group: String) -> RedisStreamInfo {
+        let group = Some(group);
+        RedisStreamInfo { stream, group }
     }
 }
 
-//impl Stream for RedisCoreClient {
-//    type Item = RespInternalValue;
-//}
+pub struct RedisStreamConsumer {
+    stream: Box<dyn Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static>,
+}
 
-pub fn connect(addr: SocketAddr) -> impl Future<Item=(), Error=()> + Send + 'static {
-    TcpStream::connect(&addr)
-        .map_err(|err| println!("Error 1: {:?}", err))
-//        .map_err(|err|
-//            RedisCoreError::from(RedisErrorKind::ConnectionError,
-//                                 format!("Could not connect to the {}", &addr)))
-        .and_then(on_stream_established)
+impl RedisStreamConsumer {
+    pub fn subscribe(info: RedisStreamInfo, addr: SocketAddr)
+                     -> impl Future<Item=RedisStreamConsumer, Error=RedisCoreError> + Send + 'static {
+        TcpStream::connect(&addr)
+            .map_err(|err|
+                RedisCoreError::from(RedisErrorKind::ConnectionError,
+                                     format!("Could not connect to the {:?}", err)))
+            .and_then(move |stream| on_stream_established(stream, info))
+    }
+
+    fn new(stream: impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static) -> RedisStreamConsumer {
+        let stream = Box::new(stream);
+        RedisStreamConsumer { stream }
+    }
+}
+
+impl Stream for RedisStreamConsumer {
+    type Item = RedisValue;
+    type Error = RedisCoreError;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.stream.poll()
+    }
 }
 
 pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue, RedisCoreError> {
@@ -68,26 +82,21 @@ pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue
 }
 
 // Send first subscribe request and run recursive server message processing
-fn on_stream_established(stream: TcpStream)
-                         -> impl Future<Item=(), Error=()> + Send + 'static {
+fn on_stream_established(stream: TcpStream, stream_info: RedisStreamInfo)
+                         -> impl Future<Item=RedisStreamConsumer, Error=RedisCoreError> + Send + 'static {
     let framed = stream.framed(RedisCodec {});
     let (to_srv, from_srv) = framed.split();
 
     // send first subscription request
     to_srv
-        .send(listen_until())
-        .map_err(|err| ()) // TODO delete it
-        .and_then(
-            move |mut to_srv| {
-                // run recursive server message processing
-                receive_and_send_recursive(from_srv, to_srv)
-                    .for_each(|msg| Ok(println!("Received message: {:?}", msg)))
-                    .map_err(|err| ())
-            }
-        )
+        .send(listen_until(stream_info.clone()))
+        .map(move |mut to_srv| {
+            // run recursive server message processing
+            RedisStreamConsumer::new(receive_and_send_recursive(from_srv, to_srv, stream_info))
+        }).map_err(|err| redis_core_error_from(err))
 }
 
-fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T)
+fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisStreamInfo)
                                     -> impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static,
           T: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static {
@@ -96,7 +105,8 @@ fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T)
         = mpsc::channel::<RespInternalValue>(16);
 
     let output = fwd_from_channel_to_srv(to_srv, rx);
-    let input = process_from_srv_and_notify_channel(from_srv, tx);
+    let input
+        = process_from_srv_and_notify_channel(from_srv, tx, stream_info);
 
     // We have the following conditions:
     // 1) a return stream should include both output future and input stream
@@ -124,14 +134,16 @@ fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
         .map(|_| ())
 }
 
-fn process_from_srv_and_notify_channel<F>(from_srv: F, tx: Sender<RespInternalValue>)
+fn process_from_srv_and_notify_channel<F>(from_srv: F,
+                                          tx: Sender<RespInternalValue>,
+                                          stream_info: RedisStreamInfo)
                                           -> impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static
 {
     from_srv
         .and_then(move |msg| {
             // TODO change the type of channel from RespInternalValue to an flag
-            tx.clone().send(listen_until())
+            tx.clone().send(listen_until(stream_info.clone()))
                 .then(|res| {
                     match res {
                         Ok(_) => (),
@@ -161,7 +173,7 @@ fn redis_core_error_new() -> RedisCoreError
 }
 
 /// TODO refactor
-fn listen_until() -> RespInternalValue
+fn listen_until(stream_info: RedisStreamInfo) -> RespInternalValue
 {
     RespInternalValue::Array(
         vec![
@@ -176,6 +188,12 @@ fn listen_until() -> RespInternalValue
 
 #[test]
 fn test_connect() {
-    tokio::run(connect("127.0.0.1:6379".parse::<SocketAddr>().unwrap()));
-}
+    let info = RedisStreamInfo::new("test_stream".to_string());
 
+    tokio::run(
+        RedisStreamConsumer::subscribe(info, "127.0.0.1:6379".parse::<SocketAddr>().unwrap())
+            .and_then(|stream|
+                stream.for_each(|msg| Ok(println!("Received message: {:?}", msg))))
+            .map_err(|err| println!("On error: {:?}", err))
+    );
+}

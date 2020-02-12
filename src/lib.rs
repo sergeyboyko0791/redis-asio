@@ -5,6 +5,6 @@ mod stream;
 
 pub use value::RedisValue;
 pub use error::{RedisCoreResult, RedisCoreError, RedisErrorKind};
-pub use stream::connect;
+pub use stream::RedisStreamConsumer;
 
 use codec::{RedisCodec, RespInternalValue};
