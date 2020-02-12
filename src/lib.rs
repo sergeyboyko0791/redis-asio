@@ -1,10 +1,9 @@
-pub mod error;
+mod error;
 mod value;
 mod codec;
-mod stream;
+mod resp_value;
 
-pub use value::RedisValue;
 pub use error::{RedisCoreResult, RedisCoreError, RedisErrorKind};
-pub use stream::RedisStreamConsumer;
-
-use codec::{RedisCodec, RespInternalValue};
+pub use resp_value::RespInternalValue;
+pub use value::RedisValue;
+pub use codec::RedisCodec;

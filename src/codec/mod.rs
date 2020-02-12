@@ -1,7 +1,7 @@
 use tokio_io::codec::{Encoder, Decoder};
 use bytes::BytesMut;
 
-use crate::RedisCoreError;
+use crate::{RedisValue, RedisCoreError, RedisErrorKind, RespInternalValue};
 
 mod encode;
 mod decode;
@@ -9,16 +9,6 @@ mod decode;
 use encode::encode_resp_value;
 use decode::{ParseResult, parse_resp_value};
 
-
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum RespInternalValue {
-    Nil,
-    Error(String),
-    Status(String),
-    Int(i64),
-    BulkString(Vec<u8>),
-    Array(Vec<RespInternalValue>),
-}
 
 pub struct RedisCodec;
 
