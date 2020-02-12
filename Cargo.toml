@@ -1,7 +1,8 @@
 [package]
-name = "redis-core"
+name = "redis-asio"
 version = "0.1.0"
 authors = ["bso <sergey.boyko0791@gmail.com>"]
+description = "Asynchronous Redis driver based on tokio"
 edition = "2018"
 
 [dependencies]
@@ -9,5 +10,7 @@ serde = "1.0"
 futures = "0.1"
 tokio = "0.1"
 tokio-io = "0.1"
+tokio-tcp = "0.1"
+tokio-core = "0.1"
 byteorder = "1.3"
 bytes = "0.4.12"
