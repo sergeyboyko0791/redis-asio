@@ -111,7 +111,7 @@ fn conversion_error_from_value<T>(src_value: &T, dst_type: &str) -> RedisCoreErr
 fn to_string(val: &RedisValue) -> String {
     match val {
         RedisValue::Nil => return String::from("Nil"),
-        RedisValue::Ok => return String::from("Ok"),
+        RedisValue::Ok => return String::from("OK"),
         RedisValue::Status(x) => format!("Status({:?})", x),
         RedisValue::Int(x) => format!("Int({:?})", x.to_string()),
         RedisValue::BulkString(x) => format!("BulkString({:?})", x),

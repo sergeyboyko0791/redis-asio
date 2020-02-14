@@ -14,7 +14,7 @@ impl RespInternalValue {
     pub fn from_redis_value(value: RedisValue) -> RespInternalValue {
         match value {
             RedisValue::Nil => RespInternalValue::Nil,
-            RedisValue::Ok => RespInternalValue::Status("Ok".to_string()),
+            RedisValue::Ok => RespInternalValue::Status("OK".to_string()),
             RedisValue::Status(x) => RespInternalValue::Status(x),
             RedisValue::Int(x) => RespInternalValue::Int(x),
             RedisValue::BulkString(x) => RespInternalValue::BulkString(x),
@@ -31,7 +31,7 @@ impl RespInternalValue {
             RespInternalValue::Nil => Ok(RedisValue::Nil),
             RespInternalValue::Error(x) => Err(RedisCoreError::from(RedisErrorKind::ReceiveError, x)),
             RespInternalValue::Status(x) => match x.as_str() {
-                "Ok" => Ok(RedisValue::Ok),
+                "OK" => Ok(RedisValue::Ok),
                 _ => Ok(RedisValue::Status(x))
             },
             RespInternalValue::Int(x) => Ok(RedisValue::Int(x)),

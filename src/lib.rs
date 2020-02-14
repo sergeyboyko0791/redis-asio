@@ -2,8 +2,9 @@ mod error;
 mod value;
 mod codec;
 mod resp_value;
-mod stream;
 mod command;
+mod client;
+mod stream;
 
 pub use error::{RedisCoreResult, RedisCoreError, RedisErrorKind};
 pub use resp_value::RespInternalValue;

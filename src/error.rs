@@ -19,6 +19,11 @@ pub struct RedisCoreError {
 pub type RedisCoreResult<T> = Result<T, RedisCoreError>;
 
 impl RedisCoreError {
+    // TODO delete it
+    pub fn new_some() -> RedisCoreError {
+        RedisCoreError { error: RedisErrorKind::ReceiveError, desc: "some error".to_string() }
+    }
+
     // TODO rename to new()
     pub fn from(error: RedisErrorKind, desc: String) -> RedisCoreError {
         RedisCoreError { error, desc }

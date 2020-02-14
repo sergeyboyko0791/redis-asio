@@ -223,15 +223,15 @@ mod tests {
 
     #[test]
     fn test_parse_status() {
-        let data = Vec::from("+Ok\r\n");
+        let data = Vec::from("+OK\r\n");
         let ParseResult { value, value_src_len }
             = parse_resp_value(data.as_slice()).unwrap().unwrap();
 
-        assert_eq!(RespInternalValue::Status("Ok".to_string()), value);
+        assert_eq!(RespInternalValue::Status("OK".to_string()), value);
         assert_eq!(data.len(), value_src_len);
 
-        assert!(parse_resp_value(Vec::from("+Ok\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
-        assert!(parse_resp_value(Vec::from("+Ok\r$").as_mut_slice()).is_err(), "expected Err");
+        assert!(parse_resp_value(Vec::from("+OK\r").as_mut_slice()).unwrap().is_none(), "expected Ok(None)");
+        assert!(parse_resp_value(Vec::from("+OK\r$").as_mut_slice()).is_err(), "expected Err");
     }
 
     #[test]

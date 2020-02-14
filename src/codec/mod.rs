@@ -48,19 +48,19 @@ mod tests {
     fn test_encode() {
         let mut codec = RedisCodec {};
         let mut buf = BytesMut::new();
-        codec.encode(RespInternalValue::Status("Ok".to_string()), &mut buf).unwrap();
-        assert_eq!("+Ok\r\n".as_bytes(), buf.as_ref());
+        codec.encode(RespInternalValue::Status("OK".to_string()), &mut buf).unwrap();
+        assert_eq!("+OK\r\n".as_bytes(), buf.as_ref());
     }
 
     #[test]
     fn test_decode() {
         let mut codec = RedisCodec {};
-        let mut buf = BytesMut::from("+Ok\r\ntrash".as_bytes().to_vec());
-        assert_eq!(RespInternalValue::Status("Ok".to_string()),
+        let mut buf = BytesMut::from("+OK\r\ntrash".as_bytes().to_vec());
+        assert_eq!(RespInternalValue::Status("OK".to_string()),
                    codec.decode(&mut buf).unwrap().unwrap());
         assert_eq!("trash".as_bytes().to_vec(), buf.as_ref());
 
-        let mut buf = BytesMut::from("+Ok\r".as_bytes().to_vec());
+        let mut buf = BytesMut::from("+OK\r".as_bytes().to_vec());
         // receive an incomplete message
         assert!(codec.decode(&mut buf).unwrap().is_none());
 
@@ -68,7 +68,7 @@ mod tests {
         let mut buf = BytesMut::from(Vec::new());
         assert!(codec.decode(&mut buf).unwrap().is_none());
 
-        let mut buf = BytesMut::from("+Ok\r$".as_bytes().to_vec());
+        let mut buf = BytesMut::from("+OK\r$".as_bytes().to_vec());
         assert!(codec.decode(&mut buf).is_err());
     }
 }

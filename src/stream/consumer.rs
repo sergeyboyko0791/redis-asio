@@ -51,7 +51,7 @@ pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue
         RespInternalValue::Nil => Ok(RedisValue::Nil),
         RespInternalValue::Error(x) => Err(RedisCoreError::from(RedisErrorKind::ReceiveError, x)),
         RespInternalValue::Status(x) => match x.as_str() {
-            "Ok" => Ok(RedisValue::Ok),
+            "OK" => Ok(RedisValue::Ok),
             _ => Ok(RedisValue::Status(x))
         },
         RespInternalValue::Int(x) => Ok(RedisValue::Int(x)),
