@@ -1,4 +1,4 @@
-use super::{RedisCoreError, RedisErrorKind, RespInternalValue};
+use super::{RedisError, RedisErrorKind, RespInternalValue};
 use std::io::Cursor;
 use std::error::Error;
 use byteorder::ReadBytesExt;
@@ -10,7 +10,7 @@ pub struct ParseResult<T> {
 
 pub type OptParseResult<T> = Option<ParseResult<T>>;
 
-pub fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+pub fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisError> {
     let value_id = match Cursor::new(data).read_u8() {
         Ok(x) => x,
         Err(_) => return Ok(None)
@@ -24,7 +24,7 @@ pub fn parse_resp_value(data: &[u8]) -> Result<OptParseResult<RespInternalValue>
         resp_start_bytes::INT => parse_int(data),
         resp_start_bytes::BULK_STRING => parse_bulkstring(data),
         resp_start_bytes::ARRAY => parse_array(data),
-        _ => Err(RedisCoreError::from(
+        _ => Err(RedisError::from(
             RedisErrorKind::ParseError,
             format!("Unknown RESP start byte {}", value_id)))
     }?;
@@ -52,7 +52,7 @@ const CRLF: (u8, u8) = (b'\r', b'\n');
 // "\r\n".len() == 2
 const CRLF_LEN: usize = 2;
 
-fn parse_error(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+fn parse_error(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisError> {
     parse_simple_string(data)
         .map(|opt_parse_result|
             opt_parse_result.map(|ParseResult { value, value_src_len }| {
@@ -61,7 +61,7 @@ fn parse_error(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCo
             }))
 }
 
-fn parse_status(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+fn parse_status(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisError> {
     parse_simple_string(data)
         .map(|opt_parse_result|
             opt_parse_result.map(|ParseResult { value, value_src_len }| {
@@ -70,7 +70,7 @@ fn parse_status(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisC
             }))
 }
 
-fn parse_int(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+fn parse_int(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisError> {
     parse_simple_int(data)
         .map(|opt_parse_result|
             opt_parse_result.map(|ParseResult { value, value_src_len }| {
@@ -79,10 +79,10 @@ fn parse_int(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCore
             }))
 }
 
-fn parse_bulkstring(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+fn parse_bulkstring(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisError> {
     let does_end_with_crlf = |data: &[u8]| data.ends_with(&[CRLF.0, CRLF.1]);
     let make_parse_error =
-        || RedisCoreError::from(
+        || RedisError::from(
             RedisErrorKind::ParseError,
             "An actual data within a bulk string does not end with the CRLF".to_string());
 
@@ -129,7 +129,7 @@ fn parse_bulkstring(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, Re
     Ok(Some(ParseResult { value, value_src_len }))
 }
 
-fn parse_array(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCoreError> {
+fn parse_array(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisError> {
     let ParseResult { value: array_len, value_src_len: len_len } =
         match parse_simple_int(data)? {
             Some(x) => x,
@@ -137,7 +137,7 @@ fn parse_array(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCo
         };
 
     if array_len < 0 {
-        return Err(RedisCoreError::from(
+        return Err(RedisError::from(
             RedisErrorKind::ParseError,
             "Array length cannot be negative".to_string()));
     }
@@ -161,7 +161,7 @@ fn parse_array(data: &[u8]) -> Result<OptParseResult<RespInternalValue>, RedisCo
     Ok(Some(ParseResult { value: RespInternalValue::Array(result), value_src_len: pos }))
 }
 
-fn parse_simple_string(data: &[u8]) -> Result<OptParseResult<String>, RedisCoreError> {
+fn parse_simple_string(data: &[u8]) -> Result<OptParseResult<String>, RedisError> {
     let string_src_len
         = match data.iter().position(|x| *x == CRLF.0) {
         Some(x) => x,
@@ -175,7 +175,7 @@ fn parse_simple_string(data: &[u8]) -> Result<OptParseResult<String>, RedisCoreE
     }
 
     if data[string_src_len + 1] != CRLF.1 {
-        return Err(RedisCoreError::from(
+        return Err(RedisError::from(
             RedisErrorKind::ParseError,
             "A status or an Error does not contain the CRLF".to_string()));
     }
@@ -189,14 +189,14 @@ fn parse_simple_string(data: &[u8]) -> Result<OptParseResult<String>, RedisCoreE
             Ok(Some(ParseResult { value, value_src_len }))
         }
         Err(err) => Err(
-            RedisCoreError::from(
+            RedisError::from(
                 RedisErrorKind::ParseError,
                 format!("Could not parse a status from bytes: {}", err.description()))
         )
     }
 }
 
-fn parse_simple_int(data: &[u8]) -> Result<OptParseResult<i64>, RedisCoreError> {
+fn parse_simple_int(data: &[u8]) -> Result<OptParseResult<i64>, RedisError> {
     let opt_parse_result = parse_simple_string(data)?;
     let ParseResult { value, value_src_len } = match opt_parse_result {
         Some(x) => x,
@@ -206,7 +206,7 @@ fn parse_simple_int(data: &[u8]) -> Result<OptParseResult<i64>, RedisCoreError> 
     let value = match value.parse::<i64>() {
         Ok(x) => x,
         Err(err) => return Err(
-            RedisCoreError::from(
+            RedisError::from(
                 RedisErrorKind::ParseError,
                 format!("Could not parse an i64 from the {:?}, error: {}", value, err.description()),
             )

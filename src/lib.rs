@@ -1,6 +1,6 @@
 mod base;
 mod stream;
 
-pub use base::{RedisCoreResult, RedisValue, RedisCommand, RedisCoreError, RedisErrorKind};
+pub use base::{RedisResult, RedisValue, RedisCommand, RedisError, RedisErrorKind, command};
 
 use base::{RespInternalValue, RedisCodec};

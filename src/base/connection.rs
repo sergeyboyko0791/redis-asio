@@ -1,39 +1,49 @@
 use tokio_io::{AsyncRead, AsyncWrite};
 use futures::{Future, Stream, Sink, Poll, Async, future, try_ready, task};
-use crate::{RespInternalValue, RedisCodec, RedisCoreError, RedisErrorKind};
+use crate::{RedisValue, RedisCommand, RespInternalValue, RedisCodec, RedisError, RedisErrorKind, command};
 use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
 use core::marker::Send as SendMarker;
+use std::error::Error;
 
 
 pub struct RedisCoreConnection {
-    pub(crate) sender: Box<dyn Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + SendMarker + 'static>,
-    pub(crate) receiver: Box<dyn Stream<Item=RespInternalValue, Error=RedisCoreError> + SendMarker + 'static>,
+    pub(crate) sender: Box<dyn Sink<SinkItem=RedisCommand, SinkError=RedisError> + SendMarker + 'static>,
+    pub(crate) receiver: Box<dyn Stream<Item=RespInternalValue, Error=RedisError> + SendMarker + 'static>,
 }
 
 impl RedisCoreConnection {
+    pub fn connect(addr: &SocketAddr) -> impl Future<Item=Self, Error=RedisError> {
+        TcpStream::connect(addr)
+            .map_err(|err| RedisError::from(RedisErrorKind::ConnectionError, err.description().into()))
+            .map(|stream| {
+                let (tx, rx) = stream.framed(RedisCodec).split();
+                Self::new(tx, rx)
+            })
+    }
+
     pub(crate) fn new<S, R>(sender: S, receiver: R) -> RedisCoreConnection
-        where S: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + SendMarker + 'static,
-              R: Stream<Item=RespInternalValue, Error=RedisCoreError> + SendMarker + 'static {
+        where S: Sink<SinkItem=RedisCommand, SinkError=RedisError> + SendMarker + 'static,
+              R: Stream<Item=RespInternalValue, Error=RedisError> + SendMarker + 'static {
         let sender = Box::new(sender);
         let receiver = Box::new(receiver);
         RedisCoreConnection { sender, receiver }
     }
 
-    pub fn send(self, req: RespInternalValue) -> Send {
+    pub fn send(self, req: RedisCommand) -> Send {
         Send::new(self, req)
     }
 }
 
 pub struct Send {
-    sender: Option<Box<dyn Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + SendMarker + 'static>>,
-    receiver: Option<Box<dyn Stream<Item=RespInternalValue, Error=RedisCoreError> + SendMarker + 'static>>,
-    request: Option<RespInternalValue>,
+    sender: Option<Box<dyn Sink<SinkItem=RedisCommand, SinkError=RedisError> + SendMarker + 'static>>,
+    receiver: Option<Box<dyn Stream<Item=RespInternalValue, Error=RedisError> + SendMarker + 'static>>,
+    request: Option<RedisCommand>,
     is_sent: bool,
 }
 
 impl Send {
-    fn new(inner: RedisCoreConnection, request: RespInternalValue) -> Send {
+    fn new(inner: RedisCoreConnection, request: RedisCommand) -> Send {
         let sender = Some(inner.sender);
         let receiver = Some(inner.receiver);
         let request = Some(request);
@@ -43,11 +53,10 @@ impl Send {
 }
 
 impl Future for Send {
-    type Item = (RedisCoreConnection, RespInternalValue);
-    type Error = RedisCoreError;
+    type Item = (RedisCoreConnection, RedisValue);
+    type Error = RedisError;
 
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        println!("poll()");
         let sender = self.sender.as_mut().unwrap();
         let receiver = self.receiver.as_mut().unwrap();
 
@@ -66,12 +75,13 @@ impl Future for Send {
 
         match try_ready!(receiver.poll()) {
             Some(response) => {
+                let redis_response = response.into_redis_value()?;
                 let con =
                     RedisCoreConnection::new(self.sender.take().unwrap(), self.receiver.take().unwrap());
-                Ok(Async::Ready((con, response)))
+                Ok(Async::Ready((con, redis_response)))
             }
-            _ => Err(RedisCoreError::from(RedisErrorKind::ConnectionError,
-                                          "Connection has closed before an answer came".to_string()))
+            _ => Err(RedisError::from(RedisErrorKind::ConnectionError,
+                                      "Connection has closed before an answer came".to_string()))
         }
     }
 }
@@ -81,31 +91,17 @@ impl Future for Send {
 fn tessssss() {
     let stream = TcpStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap());
 
-    let req = RespInternalValue::Array(vec![
-        RespInternalValue::BulkString("set".into()),
-        RespInternalValue::BulkString("foo".into()),
-        RespInternalValue::BulkString(vec![1, 2, 3, 4, 5])]);
+    let set_req = command("set").arg("foo").arg(vec![1, 2, 3, 4, 5]);
+    let get_req = command("get").arg("foo");
 
-    let req2 = RespInternalValue::Array(vec![
-        RespInternalValue::BulkString("get".into()),
-        RespInternalValue::BulkString("foo".into())]);
-
-    let fut = stream
-        .map_err(|err| RedisCoreError::new_some())
-        .and_then(move |stream| {
-            let framed = stream.framed(RedisCodec);
-            let (sender, receiver) = framed.split();
-            let cln = RedisCoreConnection::new(sender, receiver);
-            cln.send(req)
+    let ft = RedisCoreConnection::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
+        .and_then(move |con| con.send(set_req))
+        .and_then(move |(con, resp)| {
+            println!("Answer on \"set foo [1, 2, 3, 4, 5]\": {:?}", resp);
+            con.send(get_req)
         })
-        .and_then(|(con, resp)| {
-            println!("First response: {:?}", resp);
-            con.send(req2)
-        })
-        .map(|(stream, resp)| println!("Second response: {:?}", resp))
+        .map(|(stream, resp)|
+            println!("Answer on \"get foo\": {:?}", resp))
         .map_err(|err| println!("Error!!! {:?}", err));
-    tokio::run(fut);
-
-    //.map(|(stream, resp)| println!("Received response!!! {:?}", resp))
-    //                .map_err(|err| println!("Error!!! {:?}", err))
+    tokio::run(ft);
 }

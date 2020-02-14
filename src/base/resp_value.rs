@@ -1,4 +1,4 @@
-use super::{RedisValue, RedisCoreError, RedisErrorKind};
+use super::{RedisValue, RedisError, RedisErrorKind};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum RespInternalValue {
@@ -26,10 +26,10 @@ impl RespInternalValue {
         }
     }
 
-    pub fn into_redis_value(self) -> Result<RedisValue, RedisCoreError> {
+    pub fn into_redis_value(self) -> Result<RedisValue, RedisError> {
         match self {
             RespInternalValue::Nil => Ok(RedisValue::Nil),
-            RespInternalValue::Error(x) => Err(RedisCoreError::from(RedisErrorKind::ReceiveError, x)),
+            RespInternalValue::Error(x) => Err(RedisError::from(RedisErrorKind::ReceiveError, x)),
             RespInternalValue::Status(x) => match x.as_str() {
                 "OK" => Ok(RedisValue::Ok),
                 _ => Ok(RedisValue::Status(x))

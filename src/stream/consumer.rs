@@ -18,20 +18,20 @@ use bytes::BytesMut;
 
 
 pub struct RedisStreamConsumer {
-    stream: Box<dyn Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static>,
+    stream: Box<dyn Stream<Item=RedisValue, Error=RedisError> + Send + 'static>,
 }
 
 impl RedisStreamConsumer {
     pub fn subscribe(info: RedisStreamOptions, addr: SocketAddr)
-                     -> impl Future<Item=RedisStreamConsumer, Error=RedisCoreError> + Send + 'static {
+                     -> impl Future<Item=RedisStreamConsumer, Error=RedisError> + Send + 'static {
         TcpStream::connect(&addr)
             .map_err(|err|
-                RedisCoreError::from(RedisErrorKind::ConnectionError,
-                                     format!("Could not connect to the {:?}", err)))
+                RedisError::from(RedisErrorKind::ConnectionError,
+                                 format!("Could not connect to the {:?}", err)))
             .and_then(move |stream| on_stream_established(stream, info))
     }
 
-    fn new(stream: impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static) -> RedisStreamConsumer {
+    fn new(stream: impl Stream<Item=RedisValue, Error=RedisError> + Send + 'static) -> RedisStreamConsumer {
         let stream = Box::new(stream);
         RedisStreamConsumer { stream }
     }
@@ -39,17 +39,17 @@ impl RedisStreamConsumer {
 
 impl Stream for RedisStreamConsumer {
     type Item = RedisValue;
-    type Error = RedisCoreError;
+    type Error = RedisError;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         self.stream.poll()
     }
 }
 
-pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue, RedisCoreError> {
+pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue, RedisError> {
     match resp_value {
         RespInternalValue::Nil => Ok(RedisValue::Nil),
-        RespInternalValue::Error(x) => Err(RedisCoreError::from(RedisErrorKind::ReceiveError, x)),
+        RespInternalValue::Error(x) => Err(RedisError::from(RedisErrorKind::ReceiveError, x)),
         RespInternalValue::Status(x) => match x.as_str() {
             "OK" => Ok(RedisValue::Ok),
             _ => Ok(RedisValue::Status(x))
@@ -68,7 +68,7 @@ pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue
 
 // Send first subscribe request and run recursive server message processing
 fn on_stream_established(stream: TcpStream, stream_info: RedisStreamOptions)
-                         -> impl Future<Item=RedisStreamConsumer, Error=RedisCoreError> + Send + 'static {
+                         -> impl Future<Item=RedisStreamConsumer, Error=RedisError> + Send + 'static {
     let framed = stream.framed(RedisCodec {});
     let (to_srv, from_srv) = framed.split();
 
@@ -82,12 +82,12 @@ fn on_stream_established(stream: TcpStream, stream_info: RedisStreamOptions)
 }
 
 fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisStreamOptions)
-                                    -> impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static
-    where F: Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static,
-          T: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static {
+                                    -> impl Stream<Item=RedisValue, Error=RedisError> + Send + 'static
+    where F: Stream<Item=RespInternalValue, Error=RedisError> + Send + 'static,
+          T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
     let (tx,
         rx)
-        = mpsc::channel::<RespInternalValue>(16);
+        = mpsc::channel::<RedisCommand>(16);
 
     let output = fwd_from_channel_to_srv(to_srv, rx);
     let input
@@ -108,9 +108,9 @@ fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisSt
     input.select(output.into_stream()).filter_map(|x| x)
 }
 
-fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
-                              -> impl Future<Item=(), Error=RedisCoreError> + Send + 'static
-    where T: Sink<SinkItem=RespInternalValue, SinkError=RedisCoreError> + Send + 'static {
+fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RedisCommand>)
+                              -> impl Future<Item=(), Error=RedisError> + Send + 'static
+    where T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
     rx
         .map_err(|err| redis_core_error_new()) // TODO
         .fold(to_srv, |to_srv, msg| {
@@ -120,10 +120,10 @@ fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RespInternalValue>)
 }
 
 fn process_from_srv_and_notify_channel<F>(from_srv: F,
-                                          tx: Sender<RespInternalValue>,
+                                          tx: Sender<RedisCommand>,
                                           stream_info: RedisStreamOptions)
-                                          -> impl Stream<Item=RedisValue, Error=RedisCoreError> + Send + 'static
-    where F: Stream<Item=RespInternalValue, Error=RedisCoreError> + Send + 'static
+                                          -> impl Stream<Item=RedisValue, Error=RedisError> + Send + 'static
+    where F: Stream<Item=RespInternalValue, Error=RedisError> + Send + 'static
 {
     from_srv
         .and_then(move |msg| {
@@ -143,21 +143,21 @@ fn process_from_srv_and_notify_channel<F>(from_srv: F,
 }
 
 /// TODO delete it after debug
-fn redis_core_error_from<E>(err: E) -> RedisCoreError
+fn redis_core_error_from<E>(err: E) -> RedisError
     where E: std::error::Error
 {
-    RedisCoreError::from(RedisErrorKind::ConnectionError,
-                         format!("Handled an error: {}", err.description()))
+    RedisError::from(RedisErrorKind::ConnectionError,
+                     format!("Handled an error: {}", err.description()))
 }
 
 /// TODO delete it after debug
-fn redis_core_error_new() -> RedisCoreError
+fn redis_core_error_new() -> RedisError
 {
-    RedisCoreError::from(RedisErrorKind::ConnectionError,
-                         format!("Something went wrong"))
+    RedisError::from(RedisErrorKind::ConnectionError,
+                     format!("Something went wrong"))
 }
 
-fn listen_until(stream_info: RedisStreamOptions) -> RespInternalValue
+fn listen_until(stream_info: RedisStreamOptions) -> RedisCommand
 {
     let RedisStreamOptions { stream, group } = stream_info;
     let cmd =
@@ -166,7 +166,7 @@ fn listen_until(stream_info: RedisStreamOptions) -> RespInternalValue
             _ => "XREAD",
         };
 
-    let mut cmd = RedisCommand::new(cmd);
+    let mut cmd = command(cmd);
     cmd =
         match &group {
             Some(RedisGroup { group, consumer }) =>
@@ -176,13 +176,11 @@ fn listen_until(stream_info: RedisStreamOptions) -> RespInternalValue
             _ => cmd
         };
 
-    RespInternalValue::from_redis_value(
-        cmd.arg("BLOCK")
-            .arg("0") // block until next pkt
-            .arg("STREAMS")
-            .arg(stream.as_str())
-            .arg("$") // receive only new messages
-            .into_to_redis_value())
+    cmd.arg("BLOCK")
+        .arg("0") // block until next pkt
+        .arg("STREAMS")
+        .arg(stream.as_str())
+        .arg("$") // receive only new messages
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use super::{RedisCoreResult, RedisCoreError, RedisErrorKind};
+use super::{RedisResult, RedisError, RedisErrorKind};
 use std::error::Error;
 use std::fmt;
 use std::cmp::PartialEq;
@@ -16,17 +16,17 @@ pub enum RedisValue {
 }
 
 pub trait FromRedisValue: Sized {
-    fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self>;
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self>;
 
     fn from_redis_u8(_: u8) -> Option<Self> {
         None
     }
 }
 
-pub fn from_redis_value<T: FromRedisValue>(value: &RedisValue) -> RedisCoreResult<T> {
+pub fn from_redis_value<T: FromRedisValue>(value: &RedisValue) -> RedisResult<T> {
     T::from_redis_value(value)
         .map_err(|err|
-            RedisCoreError::from(
+            RedisError::from(
                 err.error.clone(),
                 format!("Couldn't convert the Redis value: \"{:?}\". Reason: \"{}\"", value, err.description()
                 ),
@@ -35,13 +35,13 @@ pub fn from_redis_value<T: FromRedisValue>(value: &RedisValue) -> RedisCoreResul
 }
 
 impl FromRedisValue for RedisValue {
-    fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
         Ok(value.clone())
     }
 }
 
 impl FromRedisValue for u8 {
-    fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
         int_from_redis_value::<u8>(value)
     }
 
@@ -51,7 +51,7 @@ impl FromRedisValue for u8 {
 }
 
 impl FromRedisValue for String {
-    fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
         match value {
             RedisValue::Status(x) => Ok(x.clone()),
             RedisValue::BulkString(x) => {
@@ -63,7 +63,7 @@ impl FromRedisValue for String {
 }
 
 impl<T: FromRedisValue> FromRedisValue for Vec<T> {
-    fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
         match value {
             RedisValue::BulkString(bulk_data) => {
                 let mut result: Vec<T> = Vec::with_capacity(bulk_data.len());
@@ -97,15 +97,15 @@ impl<T: FromRedisValue> FromRedisValue for Vec<T> {
 //    }
 //}
 
-fn to_conversion_error<T>(err: T) -> RedisCoreError
+fn to_conversion_error<T>(err: T) -> RedisError
     where T: Error {
-    RedisCoreError::from(RedisErrorKind::IncorrectConversion, err.description().to_string())
+    RedisError::from(RedisErrorKind::IncorrectConversion, err.description().to_string())
 }
 
-fn conversion_error_from_value<T>(src_value: &T, dst_type: &str) -> RedisCoreError
+fn conversion_error_from_value<T>(src_value: &T, dst_type: &str) -> RedisError
     where T: fmt::Debug {
-    RedisCoreError::from(RedisErrorKind::IncorrectConversion,
-                         format!("{:?} is not convertible to {}", src_value, dst_type))
+    RedisError::from(RedisErrorKind::IncorrectConversion,
+                     format!("{:?} is not convertible to {}", src_value, dst_type))
 }
 
 fn to_string(val: &RedisValue) -> String {
@@ -123,7 +123,7 @@ fn to_string(val: &RedisValue) -> String {
     }
 }
 
-fn int_from_redis_value<T>(value: &RedisValue) -> RedisCoreResult<T>
+fn int_from_redis_value<T>(value: &RedisValue) -> RedisResult<T>
     where T: ToIntConvertible {
     match value {
         RedisValue::Int(x) => Ok(T::convert_from_int(*x)),
@@ -157,7 +157,7 @@ macro_rules! declare_to_int_convertible {
         }
 
         impl FromRedisValue for $itype {
-            fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+            fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
                 int_from_redis_value::<$itype>(value)
             }
         }
@@ -184,7 +184,7 @@ mod tests {
         struct ArrayNode { data: String }
 
         impl FromRedisValue for ArrayNode {
-            fn from_redis_value(value: &RedisValue) -> RedisCoreResult<Self> {
+            fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
                 Ok(ArrayNode { data: from_redis_value(value)? })
             }
         }

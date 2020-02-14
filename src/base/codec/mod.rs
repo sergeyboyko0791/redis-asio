@@ -1,7 +1,7 @@
 use tokio_io::codec::{Encoder, Decoder};
 use bytes::BytesMut;
 
-use super::{RespInternalValue, RedisCoreError, RedisErrorKind};
+use super::{RespInternalValue, RedisError, RedisErrorKind, RedisCommand, command};
 
 mod encode;
 mod decode;
@@ -13,18 +13,18 @@ use decode::{ParseResult, parse_resp_value};
 pub struct RedisCodec;
 
 impl Encoder for RedisCodec {
-    type Item = RespInternalValue;
-    type Error = RedisCoreError;
+    type Item = RedisCommand;
+    type Error = RedisError;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.extend_from_slice(encode_resp_value(item).as_ref());
+        dst.extend_from_slice(encode_resp_value(item.into_resp_value()).as_ref());
         Ok(())
     }
 }
 
 impl Decoder for RedisCodec {
     type Item = RespInternalValue;
-    type Error = RedisCoreError;
+    type Error = RedisError;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let ParseResult { value, value_src_len } =
@@ -43,13 +43,15 @@ impl Decoder for RedisCodec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::{RedisCommand, command};
 
     #[test]
     fn test_encode() {
         let mut codec = RedisCodec {};
         let mut buf = BytesMut::new();
-        codec.encode(RespInternalValue::Status("OK".to_string()), &mut buf).unwrap();
-        assert_eq!("+OK\r\n".as_bytes(), buf.as_ref());
+        let cmd = command("PING");
+        codec.encode(cmd, &mut buf).unwrap();
+        assert_eq!("*1\r\n$4\r\nPING\r\n".as_bytes(), buf.as_ref());
     }
 
     #[test]

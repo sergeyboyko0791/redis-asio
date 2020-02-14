@@ -10,29 +10,29 @@ pub enum RedisErrorKind {
 }
 
 #[derive(Debug)]
-pub struct RedisCoreError {
+pub struct RedisError {
     pub error: RedisErrorKind,
     desc: String,
 }
 
 // TODO rename all Result<T, RedisCoreError> uses to the type
-pub type RedisCoreResult<T> = Result<T, RedisCoreError>;
+pub type RedisResult<T> = Result<T, RedisError>;
 
-impl RedisCoreError {
+impl RedisError {
     // TODO delete it
-    pub fn new_some() -> RedisCoreError {
-        RedisCoreError { error: RedisErrorKind::ReceiveError, desc: "some error".to_string() }
+    pub fn new_some() -> RedisError {
+        RedisError { error: RedisErrorKind::ReceiveError, desc: "some error".to_string() }
     }
 
     // TODO rename to new()
-    pub fn from(error: RedisErrorKind, desc: String) -> RedisCoreError {
-        RedisCoreError { error, desc }
+    pub fn from(error: RedisErrorKind, desc: String) -> RedisError {
+        RedisError { error, desc }
     }
 
     // TODO add from()
 }
 
-impl fmt::Display for RedisCoreError {
+impl fmt::Display for RedisError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "error: \"{}\", description: \"{}\"",
                to_string(&self.error),
@@ -40,15 +40,15 @@ impl fmt::Display for RedisCoreError {
     }
 }
 
-impl std::error::Error for RedisCoreError {
+impl std::error::Error for RedisError {
     fn description(&self) -> &str {
         &self.desc
     }
 }
 
-impl From<std::io::Error> for RedisCoreError {
+impl From<std::io::Error> for RedisError {
     fn from(err: std::io::Error) -> Self {
-        RedisCoreError { error: RedisErrorKind::ConnectionError, desc: err.description().to_string() }
+        RedisError { error: RedisErrorKind::ConnectionError, desc: err.description().to_string() }
     }
 }
 
