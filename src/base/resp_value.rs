@@ -1,4 +1,4 @@
-use crate::{RedisValue, RedisCoreError, RedisErrorKind};
+use super::{RedisValue, RedisCoreError, RedisErrorKind};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum RespInternalValue {

@@ -2,7 +2,7 @@
 extern crate tokio;
 
 use crate::*;
-use super::RedisStreamOptions;
+use super::{RedisStreamOptions, RedisGroup};
 
 use tokio_tcp::TcpStream;
 use std::net::SocketAddr;

@@ -1,4 +1,4 @@
-use crate::{RedisCoreResult, RedisCoreError, RedisErrorKind};
+use super::{RedisCoreResult, RedisCoreError, RedisErrorKind};
 use std::error::Error;
 use std::fmt;
 use std::cmp::PartialEq;

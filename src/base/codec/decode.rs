@@ -1,5 +1,4 @@
-use crate::{RedisCoreError, RedisErrorKind};
-use crate::codec::RespInternalValue;
+use super::{RedisCoreError, RedisErrorKind, RespInternalValue};
 use std::io::Cursor;
 use std::error::Error;
 use byteorder::ReadBytesExt;

@@ -1,4 +1,4 @@
-use crate::codec::RespInternalValue;
+use super::RespInternalValue;
 
 pub fn encode_resp_value(value: RespInternalValue) -> Vec<u8> {
     match value {

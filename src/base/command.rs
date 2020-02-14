@@ -1,4 +1,4 @@
-use crate::RedisValue;
+use super::RedisValue;
 
 pub struct RedisCommand {
     args: Vec<RedisValue>,
