@@ -1,6 +1,12 @@
 use tokio_io::{AsyncRead, AsyncWrite};
 use futures::{Future, Stream, Sink, Poll, Async, future, try_ready, task};
-use crate::{RedisValue, RedisCommand, RespInternalValue, RedisCodec, RedisError, RedisErrorKind, command};
+use crate::{RedisValue,
+            RedisCommand,
+            RespInternalValue,
+            RedisCodec,
+            RedisError,
+            RedisErrorKind,
+            command};
 use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
 use core::marker::Send as SendMarker;
@@ -86,22 +92,32 @@ impl Future for Send {
     }
 }
 
-// TODO implement effective tests
-#[test]
-fn tessssss() {
-    let stream = TcpStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::from_redis_value;
 
-    let set_req = command("set").arg("foo").arg(vec![1, 2, 3, 4, 5]);
-    let get_req = command("get").arg("foo");
+    #[test]
+    fn test_get_set() {
+        let now = SystemTime::now();
+        let since_the_epoch = now.duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
+        let origin_value = since_the_epoch.as_millis() as i64;
 
-    let ft = RedisCoreConnection::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-        .and_then(move |con| con.send(set_req))
-        .and_then(move |(con, resp)| {
-            println!("Answer on \"set foo [1, 2, 3, 4, 5]\": {:?}", resp);
-            con.send(get_req)
-        })
-        .map(|(stream, resp)|
-            println!("Answer on \"get foo\": {:?}", resp))
-        .map_err(|err| println!("Error!!! {:?}", err));
-    tokio::run(ft);
+        let set_req = command("set").arg("foo").arg(origin_value);
+        let get_req = command("get").arg("foo");
+
+        let ft =
+            RedisCoreConnection::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
+                .and_then(move |con| con.send(set_req))
+                .and_then(|(con, response)| {
+                    assert_eq!(RedisValue::Ok, response, "Expect Ok");
+                    con.send(get_req)
+                })
+                .map(move |(_, response)|
+                    assert_eq!(origin_value, from_redis_value(&response).unwrap()))
+                .map_err(|_| unreachable!());
+        tokio::run(ft);
+    }
 }
