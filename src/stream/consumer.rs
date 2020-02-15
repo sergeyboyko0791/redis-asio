@@ -11,9 +11,7 @@ use futures::*;
 use tokio_core::io::Framed;
 use tokio_io::AsyncRead;
 use tokio_io::io;
-use futures::sync::mpsc::unbounded;
-use futures::sync::mpsc;
-use futures::sync::mpsc::{Sender, Receiver};
+use futures::sync::mpsc::{channel, Sender, Receiver};
 use bytes::BytesMut;
 
 
@@ -26,8 +24,8 @@ impl RedisStreamConsumer {
                      -> impl Future<Item=RedisStreamConsumer, Error=RedisError> + Send + 'static {
         TcpStream::connect(&addr)
             .map_err(|err|
-                RedisError::from(RedisErrorKind::ConnectionError,
-                                 format!("Could not connect to the {:?}", err)))
+                RedisError::new(RedisErrorKind::ConnectionError,
+                                format!("Could not connect to the {:?}", err)))
             .and_then(move |stream| on_stream_established(stream, info))
     }
 
@@ -35,6 +33,10 @@ impl RedisStreamConsumer {
         let stream = Box::new(stream);
         RedisStreamConsumer { stream }
     }
+}
+
+enum StreamInternalCommand {
+    ListenNextMessage,
 }
 
 impl Stream for RedisStreamConsumer {
@@ -46,10 +48,10 @@ impl Stream for RedisStreamConsumer {
     }
 }
 
-pub fn redis_value_from_resp(resp_value: RespInternalValue) -> Result<RedisValue, RedisError> {
+pub fn redis_value_from_resp(resp_value: RespInternalValue) -> RedisResult<RedisValue> {
     match resp_value {
         RespInternalValue::Nil => Ok(RedisValue::Nil),
-        RespInternalValue::Error(x) => Err(RedisError::from(RedisErrorKind::ReceiveError, x)),
+        RespInternalValue::Error(x) => Err(RedisError::new(RedisErrorKind::ReceiveError, x)),
         RespInternalValue::Status(x) => match x.as_str() {
             "OK" => Ok(RedisValue::Ok),
             _ => Ok(RedisValue::Status(x))
@@ -78,20 +80,23 @@ fn on_stream_established(stream: TcpStream, stream_info: RedisStreamOptions)
         .map(move |to_srv| {
             // run recursive server message processing
             RedisStreamConsumer::new(receive_and_send_recursive(from_srv, to_srv, stream_info))
-        }).map_err(|err| redis_core_error_from(err))
+        }).map_err(|err| RedisError::new(RedisErrorKind::ConnectionError,
+                                         format!("Could not send listen request: {:?}", err)))
 }
 
 fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisStreamOptions)
                                     -> impl Stream<Item=RedisValue, Error=RedisError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisError> + Send + 'static,
           T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
-    let (tx,
-        rx)
-        = mpsc::channel::<RedisCommand>(16);
+    // Redis Streams protocol is a simple request-response protocol,
+    // and we should not receive more than one packet before the rx Receiver<StreamInternalCommand>
+    const BUFFER_SIZE: usize = 1;
+    let (tx, rx) =
+        channel::<StreamInternalCommand>(BUFFER_SIZE);
 
-    let output = fwd_from_channel_to_srv(to_srv, rx);
+    let output = fwd_from_channel_to_srv(to_srv, rx, stream_info);
     let input
-        = process_from_srv_and_notify_channel(from_srv, tx, stream_info);
+        = process_from_srv_and_notify_channel(from_srv, tx);
 
     // We have the following conditions:
     // 1) a return stream should include both output future and input stream
@@ -108,31 +113,37 @@ fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisSt
     input.select(output.into_stream()).filter_map(|x| x)
 }
 
-fn fwd_from_channel_to_srv<T>(to_srv: T, rx: Receiver<RedisCommand>)
+fn fwd_from_channel_to_srv<T>(to_srv: T,
+                              rx: Receiver<StreamInternalCommand>,
+                              stream_info: RedisStreamOptions)
                               -> impl Future<Item=(), Error=RedisError> + Send + 'static
     where T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
     rx
-        .map_err(|err| redis_core_error_new()) // TODO
-        .fold(to_srv, |to_srv, msg| {
-            to_srv.send(msg)
+        .map_err(|err| RedisError::new(RedisErrorKind::InternalError,
+                                       "Cannot read from internal channel".into()))
+        .fold(to_srv, move |to_srv, msg| {
+            match msg {
+                StreamInternalCommand::ListenNextMessage =>
+                    to_srv.send(listen_until(stream_info.clone()))
+            }
         })
         .map(|_| ())
 }
 
 fn process_from_srv_and_notify_channel<F>(from_srv: F,
-                                          tx: Sender<RedisCommand>,
-                                          stream_info: RedisStreamOptions)
+                                          tx: Sender<StreamInternalCommand>)
                                           -> impl Stream<Item=RedisValue, Error=RedisError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisError> + Send + 'static
 {
     from_srv
         .and_then(move |msg| {
-            // TODO change the type of channel from RespInternalValue to an flag
-            tx.clone().send(listen_until(stream_info.clone()))
+            tx.clone().send(StreamInternalCommand::ListenNextMessage)
                 .then(|res| {
                     match res {
                         Ok(_) => (),
-                        Err(err) => return Err(redis_core_error_from(err))
+                        Err(err) =>
+                            return Err(RedisError::new(RedisErrorKind::ConnectionError,
+                                                       format!("Could not send listen request: {:?}", err)))
                     }
                     // convert RespInternalValue to RedisValue
                     // note: the function returns an error if the Resp value is Error
@@ -140,21 +151,6 @@ fn process_from_srv_and_notify_channel<F>(from_srv: F,
                     redis_value_from_resp(msg)
                 })
         })
-}
-
-/// TODO delete it after debug
-fn redis_core_error_from<E>(err: E) -> RedisError
-    where E: std::error::Error
-{
-    RedisError::from(RedisErrorKind::ConnectionError,
-                     format!("Handled an error: {}", err.description()))
-}
-
-/// TODO delete it after debug
-fn redis_core_error_new() -> RedisError
-{
-    RedisError::from(RedisErrorKind::ConnectionError,
-                     format!("Something went wrong"))
 }
 
 fn listen_until(stream_info: RedisStreamOptions) -> RedisCommand

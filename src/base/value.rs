@@ -26,7 +26,7 @@ pub trait FromRedisValue: Sized {
 pub fn from_redis_value<T: FromRedisValue>(value: &RedisValue) -> RedisResult<T> {
     T::from_redis_value(value)
         .map_err(|err|
-            RedisError::from(
+            RedisError::new(
                 err.error.clone(),
                 format!("Couldn't convert the Redis value: \"{:?}\". Reason: \"{}\"", value, err.description()
                 ),
@@ -99,13 +99,13 @@ impl<T: FromRedisValue> FromRedisValue for Vec<T> {
 
 fn to_conversion_error<T>(err: T) -> RedisError
     where T: Error {
-    RedisError::from(RedisErrorKind::IncorrectConversion, err.description().to_string())
+    RedisError::new(RedisErrorKind::IncorrectConversion, err.description().to_string())
 }
 
 fn conversion_error_from_value<T>(src_value: &T, dst_type: &str) -> RedisError
     where T: fmt::Debug {
-    RedisError::from(RedisErrorKind::IncorrectConversion,
-                     format!("{:?} is not convertible to {}", src_value, dst_type))
+    RedisError::new(RedisErrorKind::IncorrectConversion,
+                    format!("{:?} is not convertible to {}", src_value, dst_type))
 }
 
 fn to_string(val: &RedisValue) -> String {

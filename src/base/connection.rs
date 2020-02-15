@@ -15,7 +15,7 @@ pub struct RedisCoreConnection {
 impl RedisCoreConnection {
     pub fn connect(addr: &SocketAddr) -> impl Future<Item=Self, Error=RedisError> {
         TcpStream::connect(addr)
-            .map_err(|err| RedisError::from(RedisErrorKind::ConnectionError, err.description().into()))
+            .map_err(|err| RedisError::new(RedisErrorKind::ConnectionError, err.description().into()))
             .map(|stream| {
                 let (tx, rx) = stream.framed(RedisCodec).split();
                 Self::new(tx, rx)
@@ -80,8 +80,8 @@ impl Future for Send {
                     RedisCoreConnection::new(self.sender.take().unwrap(), self.receiver.take().unwrap());
                 Ok(Async::Ready((con, redis_response)))
             }
-            _ => Err(RedisError::from(RedisErrorKind::ConnectionError,
-                                      "Connection has closed before an answer came".to_string()))
+            _ => Err(RedisError::new(RedisErrorKind::ConnectionError,
+                                     "Connection has closed before an answer came".to_string()))
         }
     }
 }

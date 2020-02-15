@@ -3,6 +3,7 @@ use std::error::Error;
 
 #[derive(Debug, Clone)]
 pub enum RedisErrorKind {
+    InternalError,
     IncorrectConversion,
     ConnectionError,
     ParseError,
@@ -19,17 +20,9 @@ pub struct RedisError {
 pub type RedisResult<T> = Result<T, RedisError>;
 
 impl RedisError {
-    // TODO delete it
-    pub fn new_some() -> RedisError {
-        RedisError { error: RedisErrorKind::ReceiveError, desc: "some error".to_string() }
-    }
-
-    // TODO rename to new()
-    pub fn from(error: RedisErrorKind, desc: String) -> RedisError {
+    pub fn new(error: RedisErrorKind, desc: String) -> RedisError {
         RedisError { error, desc }
     }
-
-    // TODO add from()
 }
 
 impl fmt::Display for RedisError {
@@ -54,6 +47,7 @@ impl From<std::io::Error> for RedisError {
 
 fn to_string(err: &RedisErrorKind) -> &'static str {
     match err {
+        RedisErrorKind::InternalError => "InternalError",
         RedisErrorKind::IncorrectConversion => "IncorrectConversion",
         RedisErrorKind::ConnectionError => "ConnectionError",
         RedisErrorKind::ParseError => "ParseError",

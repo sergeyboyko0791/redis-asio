@@ -1,7 +1,7 @@
 use tokio_io::codec::{Encoder, Decoder};
 use bytes::BytesMut;
 
-use super::{RespInternalValue, RedisError, RedisErrorKind, RedisCommand, command};
+use super::{RedisResult, RespInternalValue, RedisError, RedisErrorKind, RedisCommand, command};
 
 mod encode;
 mod decode;
