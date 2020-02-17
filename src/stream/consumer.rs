@@ -1,6 +1,11 @@
 // TODO
 use crate::*;
-use super::{RedisStreamOptions, RedisGroup, StreamEntry, parse_stream_entries};
+use super::{SubscribeOptions,
+            RedisGroup,
+            StreamEntry,
+            ReadExplicitOptions,
+            RangeOptions,
+            parse_stream_entries};
 
 use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
@@ -24,17 +29,28 @@ impl RedisStreamConsumer {
             .map(|connection| Self { connection })
     }
 
-    pub fn subscribe(self, stream_info: RedisStreamOptions)
+    pub fn read_explicit(self, options: ReadExplicitOptions)
+                         -> impl Future<
+                             Item=(RedisStreamConsumer, Vec<StreamEntry>),
+                             Error=RedisError>
+                         + Send + 'static {
+        self.connection.send(read_explicit_cmd(options))
+            .and_then(|(connection, response)|
+                Ok((RedisStreamConsumer { connection }, parse_stream_entries(response)?))
+            )
+    }
+
+    pub fn subscribe(self, options: SubscribeOptions)
                      -> impl Future<Item=Subscribe, Error=RedisError> + Send + 'static {
         let RedisCoreConnection { sender, receiver } = self.connection;
 
         // send first subscription request
         sender
-            .send(listen_until(stream_info.clone()))
+            .send(subscribe_cmd(options.clone()))
             .map(move |sender| {
                 // run recursive server message processing
                 Subscribe {
-                    stream: Box::new(receive_and_send_recursive(receiver, sender, stream_info))
+                    stream: Box::new(receive_and_send_recursive(receiver, sender, options))
                 }
             }).map_err(|err| RedisError::new(RedisErrorKind::ConnectionError,
                                              format!("Could not send listen request: {:?}", err)))
@@ -71,7 +87,7 @@ enum StreamInternalCommand {
     ListenNextMessage,
 }
 
-fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisStreamOptions)
+fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, options: SubscribeOptions)
                                     -> impl Stream<Item=RedisValue, Error=RedisError> + Send + 'static
     where F: Stream<Item=RespInternalValue, Error=RedisError> + Send + 'static,
           T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
@@ -81,7 +97,7 @@ fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisSt
     let (tx, rx) =
         channel::<StreamInternalCommand>(BUFFER_SIZE);
 
-    let output = fwd_from_channel_to_srv(to_srv, rx, stream_info);
+    let output = fwd_from_channel_to_srv(to_srv, rx, options);
     let input
         = process_from_srv_and_notify_channel(from_srv, tx);
 
@@ -102,7 +118,7 @@ fn receive_and_send_recursive<F, T>(from_srv: F, to_srv: T, stream_info: RedisSt
 
 fn fwd_from_channel_to_srv<T>(to_srv: T,
                               rx: Receiver<StreamInternalCommand>,
-                              stream_info: RedisStreamOptions)
+                              options: SubscribeOptions)
                               -> impl Future<Item=(), Error=RedisError> + Send + 'static
     where T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
     rx
@@ -111,7 +127,7 @@ fn fwd_from_channel_to_srv<T>(to_srv: T,
         .fold(to_srv, move |to_srv, msg| {
             match msg {
                 StreamInternalCommand::ListenNextMessage =>
-                    to_srv.send(listen_until(stream_info.clone()))
+                    to_srv.send(subscribe_cmd(options.clone()))
             }
         })
         .map(|_| ())
@@ -140,9 +156,7 @@ fn process_from_srv_and_notify_channel<F>(from_srv: F,
         })
 }
 
-fn listen_until(stream_info: RedisStreamOptions) -> RedisCommand
-{
-    let RedisStreamOptions { stream, group } = stream_info;
+fn xread_cmd_from(group: Option<RedisGroup>) -> RedisCommand {
     let cmd =
         match &group {
             Some(_) => "XREADGROUP",
@@ -150,35 +164,64 @@ fn listen_until(stream_info: RedisStreamOptions) -> RedisCommand
         };
 
     let mut cmd = command(cmd);
-    cmd =
-        match &group {
-            Some(RedisGroup { group, consumer }) =>
-                cmd.arg("GROUP")
-                    .arg(group.as_str())
-                    .arg(consumer.as_str()),
-            _ => cmd
-        };
+    match group {
+        Some(RedisGroup { group, consumer }) =>
+            cmd.arg("GROUP")
+                .arg(group.as_str())
+                .arg(consumer.as_str()),
+        _ => cmd
+    }
+}
 
-    cmd.arg("BLOCK")
+fn subscribe_cmd(options: SubscribeOptions) -> RedisCommand
+{
+    let SubscribeOptions { stream, group } = options;
+    xread_cmd_from(group)
+        .arg("BLOCK")
         .arg("0") // block until next pkt
         .arg("STREAMS")
         .arg(stream.as_str())
         .arg("$") // receive only new messages
 }
 
+fn read_explicit_cmd(options: ReadExplicitOptions) -> RedisCommand
+{
+    let ReadExplicitOptions { stream, group, count, start_id } = options;
+    xread_cmd_from(group)
+        .arg("COUNT")
+        .arg(count as i64)
+        .arg("STREAMS")
+        .arg(stream.as_str())
+        .arg(start_id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream::EntryId;
 
     #[test]
-    fn test_connect() {
-        let info = RedisStreamOptions::new("test_stream".to_string());
+    fn test_subscribe() {
+        let options = SubscribeOptions::new("test_stream".to_string());
 
         tokio::run(
             RedisStreamConsumer::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-                .and_then(move |consumer| consumer.subscribe(info))
+                .and_then(move |consumer| consumer.subscribe(options))
                 .and_then(|subscription|
-                    subscription.for_each(|msg| Ok(println!("Received message: {:?}", msg))))
+                    subscription.for_each(|entries| Ok(println!("Received message: {:?}", entries))))
+                .map_err(|err| println!("On error: {:?}", err))
+        );
+    }
+
+    #[test]
+    fn test_read_exact() {
+        let options = ReadExplicitOptions::new("test_stream".to_string(), 2, EntryId::new(0, 0));
+
+        tokio::run(
+            RedisStreamConsumer::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
+                .and_then(move |consumer| consumer.read_explicit(options))
+                .map(|(consumer, entries)|
+                    println!("Received entries: {:?}", entries))
                 .map_err(|err| println!("On error: {:?}", err))
         );
     }

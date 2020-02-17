@@ -2,8 +2,6 @@ mod options;
 mod entry;
 mod consumer;
 
-pub use options::{RedisStreamOptions, RedisGroup};
-pub use entry::{StreamEntry, EntryId};
+pub use options::{SubscribeOptions, ReadExplicitOptions, RangeOptions, RangeType, RedisGroup};
+pub use entry::{StreamEntry, EntryId, parse_stream_entries};
 pub use consumer::RedisStreamConsumer;
-
-use entry::parse_stream_entries;

@@ -3,7 +3,7 @@ use std::num::ParseIntError;
 use std::error::Error;
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, PartialOrd)]
 pub struct EntryId((u64, u64));
 
 #[derive(PartialEq)]
@@ -29,7 +29,7 @@ impl StreamEntry {
 }
 
 /// Parse RedisValue to vec of StreamEntry
-pub(crate) fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> {
+pub fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> {
     // usually count of entries within one stream is 1,
     // because in finally case we subscribe on only new messages
     const LEN_FACTOR: usize = 1;
@@ -43,7 +43,7 @@ pub(crate) fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamE
         for entry in entries.into_iter() {
             // transform the entry value to the RSEntry
             let stream_entry =
-                StreamEntry::new(id.clone(), EntryId::new(entry.id)?, entry.key_values);
+                StreamEntry::new(id.clone(), EntryId::from_string(entry.id)?, entry.key_values);
 
             stream_entries.push(stream_entry);
         }
@@ -71,8 +71,12 @@ impl fmt::Debug for StreamEntry {
 }
 
 impl EntryId {
+    pub fn new(ms: u64, id: u64) -> EntryId {
+        EntryId((ms, id))
+    }
+
     // Parse the Redis Stream Entry as pair: <milliseconds, id>
-    pub fn new(id: String) -> RedisResult<EntryId> {
+    pub(crate) fn from_string(id: String) -> RedisResult<EntryId> {
         const ENTRY_ID_CHUNK_LEN: usize = 2;
         const ENTRY_ID_MS_POS: usize = 0;
         const ENTRY_ID_ID_POS: usize = 1;
@@ -94,6 +98,13 @@ impl EntryId {
 
     pub fn to_string(&self) -> String {
         format!("{}-{}", (self.0).0, (self.0).1)
+    }
+}
+
+impl fmt::Debug for EntryId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.to_string())?;
+        Ok(())
     }
 }
 
