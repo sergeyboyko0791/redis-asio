@@ -4,6 +4,7 @@ use super::EntryId;
 #[derive(Clone)]
 pub struct SubscribeOptions {
     /// Stream name
+    /// TODO change to vec
     pub(crate) stream: String,
     /// Optional group info
     pub(crate) group: Option<RedisGroup>,
@@ -27,6 +28,13 @@ pub struct RangeOptions {
     pub(crate) count: u16,
     /// Get entries with ID in the range
     pub(crate) range: RangeType,
+}
+
+pub struct AddOptions {
+    /// Stream name
+    pub(crate) stream: String,
+    /// Optional explicit entry id
+    pub(crate) entry_id: Option<EntryId>,
 }
 
 pub enum RangeType {
@@ -80,5 +88,17 @@ impl RangeOptions {
         }
 
         Ok(RangeOptions { stream, count, range })
+    }
+}
+
+impl AddOptions {
+    pub fn new(stream: String) -> AddOptions {
+        let entry_id: Option<EntryId> = None;
+        AddOptions { stream, entry_id }
+    }
+
+    pub fn with_id(stream: String, entry_id: EntryId) -> AddOptions {
+        let entry_id = Some(entry_id);
+        AddOptions { stream, entry_id }
     }
 }

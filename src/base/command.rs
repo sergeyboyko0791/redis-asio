@@ -15,7 +15,7 @@ pub struct RedisCommand {
     args: Vec<RespInternalValue>,
 }
 
-pub trait IntoRedisArgument {
+pub trait ToRedisArgument {
     fn to_redis_argument(&self) -> RedisArgument;
 
     fn into_redis_argument(self) -> RedisArgument;
@@ -28,9 +28,13 @@ impl RedisCommand {
         }
     }
 
-    pub fn arg<T: IntoRedisArgument>(mut self, arg: T) -> RedisCommand {
+    pub fn arg<T: ToRedisArgument>(mut self, arg: T) -> RedisCommand {
         self.args.push(arg.into_redis_argument().into_resp_value());
         self
+    }
+
+    pub fn arg_mut<T: ToRedisArgument>(&mut self, arg: T) {
+        self.args.push(arg.into_redis_argument().into_resp_value());
     }
 
     pub fn into_resp_value(self) -> RespInternalValue {
@@ -48,7 +52,7 @@ impl RedisArgument {
     }
 }
 
-impl IntoRedisArgument for &str {
+impl ToRedisArgument for &str {
     fn to_redis_argument(&self) -> RedisArgument {
         RedisArgument::String(self.to_string())
     }
@@ -58,7 +62,7 @@ impl IntoRedisArgument for &str {
     }
 }
 
-impl IntoRedisArgument for String {
+impl ToRedisArgument for String {
     fn to_redis_argument(&self) -> RedisArgument {
         RedisArgument::String(self.clone())
     }
@@ -68,7 +72,7 @@ impl IntoRedisArgument for String {
     }
 }
 
-impl IntoRedisArgument for Vec<u8> {
+impl ToRedisArgument for Vec<u8> {
     fn to_redis_argument(&self) -> RedisArgument {
         RedisArgument::Bytes(self.clone())
     }
@@ -80,7 +84,7 @@ impl IntoRedisArgument for Vec<u8> {
 
 macro_rules! declare_to_int_argument {
     ($itype:ty) => {
-        impl IntoRedisArgument for $itype {
+        impl ToRedisArgument for $itype {
             fn to_redis_argument(&self) -> RedisArgument {
                 RedisArgument::Int(*self as i64)
             }

@@ -10,7 +10,6 @@ use super::{SubscribeOptions,
             parse_stream_entries,
             parse_range_entries};
 
-use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
 use futures::{Future, Stream, Sink};
 use futures::*;
@@ -190,12 +189,19 @@ fn xread_cmd_from(group: Option<RedisGroup>) -> RedisCommand {
 fn subscribe_cmd(options: SubscribeOptions) -> RedisCommand
 {
     let SubscribeOptions { stream, group } = options;
+
+    // receive only new messages (specifier is different for XREAD and XREADGROUP)
+    let id = match &group {
+        Some(_) => ">",
+        _ => "$"
+    };
+
     xread_cmd_from(group)
         .arg("BLOCK")
         .arg("0") // block until next pkt
         .arg("STREAMS")
         .arg(stream.as_str())
-        .arg("$") // receive only new messages
+        .arg(id)
 }
 
 fn read_explicit_cmd(options: ReadExplicitOptions) -> RedisCommand

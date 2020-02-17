@@ -8,6 +8,7 @@ pub use base::{RedisCoreConnection,
                RedisError,
                RedisErrorKind,
                FromRedisValue,
+               ToRedisArgument,
                command,
                from_redis_value};
 
