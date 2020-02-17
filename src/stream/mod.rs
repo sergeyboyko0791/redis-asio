@@ -1,4 +1,5 @@
 mod options;
+mod entry;
 mod consumer;
 
 pub use options::{RedisStreamOptions, RedisGroup};

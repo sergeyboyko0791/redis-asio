@@ -4,6 +4,7 @@ use std::fmt;
 use std::cmp::PartialEq;
 use std::str::FromStr;
 use core::num::ParseIntError;
+use crate::base::RespInternalValue;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RedisValue {
@@ -13,6 +14,30 @@ pub enum RedisValue {
     Int(i64),
     BulkString(Vec<u8>),
     Array(Vec<RedisValue>),
+}
+
+impl RedisValue {
+    //TODO add maybe to_resp_value and corresponding methods for RespValue to RedisValue
+
+    pub(crate) fn from_resp_value(resp_value: RespInternalValue) -> RedisResult<RedisValue> {
+        match resp_value {
+            RespInternalValue::Nil => Ok(RedisValue::Nil),
+            RespInternalValue::Error(x) => Err(RedisError::new(RedisErrorKind::ReceiveError, x)),
+            RespInternalValue::Status(x) => match x.as_str() {
+                "OK" => Ok(RedisValue::Ok),
+                _ => Ok(RedisValue::Status(x))
+            },
+            RespInternalValue::Int(x) => Ok(RedisValue::Int(x)),
+            RespInternalValue::BulkString(x) => Ok(RedisValue::BulkString(x)),
+            RespInternalValue::Array(x) => {
+                let mut res: Vec<RedisValue> = Vec::with_capacity(x.len());
+                for val in x.into_iter() {
+                    res.push(Self::from_resp_value(val)?);
+                }
+                Ok(RedisValue::Array(res))
+            }
+        }
+    }
 }
 
 pub trait FromRedisValue: Sized {
@@ -87,6 +112,28 @@ impl<T: FromRedisValue> FromRedisValue for Vec<T> {
             }
             _ => Err(conversion_error_from_value(value, "Array"))
         }
+    }
+}
+
+// TODO make macro and implenent that for (T, ..., T)
+impl<T1, T2:> FromRedisValue for (T1, T2)
+    where T1: FromRedisValue + fmt::Debug,
+          T2: FromRedisValue + fmt::Debug {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
+        let mut values: Vec<RedisValue> = from_redis_value(value)?;
+        if values.len() != 2 {
+            return Err(
+                RedisError::new(
+                    RedisErrorKind::ParseError,
+                    format!("Couldn't convert the Redis value: \"{:?}\" to tuple len {}",
+                            values,
+                            values.len())));
+        }
+
+        let first: T1 = from_redis_value(&values[0])?;
+        let second: T2 = from_redis_value(&values[1])?;
+
+        Ok((first, second))
     }
 }
 
