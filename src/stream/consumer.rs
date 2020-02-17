@@ -3,9 +3,12 @@ use crate::*;
 use super::{SubscribeOptions,
             RedisGroup,
             StreamEntry,
+            RangeEntry,
             ReadExplicitOptions,
             RangeOptions,
-            parse_stream_entries};
+            RangeType,
+            parse_stream_entries,
+            parse_range_entries};
 
 use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
@@ -37,6 +40,17 @@ impl RedisStreamConsumer {
         self.connection.send(read_explicit_cmd(options))
             .and_then(|(connection, response)|
                 Ok((RedisStreamConsumer { connection }, parse_stream_entries(response)?))
+            )
+    }
+
+    pub fn range(self, options: RangeOptions)
+                 -> impl Future<
+                     Item=(RedisStreamConsumer, Vec<RangeEntry>),
+                     Error=RedisError>
+                 + Send + 'static {
+        self.connection.send(range_cmd(options))
+            .and_then(|(connection, response)|
+                Ok((RedisStreamConsumer { connection }, parse_range_entries(response)?))
             )
     }
 
@@ -195,6 +209,24 @@ fn read_explicit_cmd(options: ReadExplicitOptions) -> RedisCommand
         .arg(start_id.to_string())
 }
 
+fn range_cmd(options: RangeOptions) -> RedisCommand
+{
+    let RangeOptions { stream, count, range } = options;
+
+    let (left, right) = match range {
+        RangeType::GreaterThan(left) => (left.to_string(), "+".to_string()),
+        RangeType::LessThan(right) => ("-".to_string(), right.to_string()),
+        RangeType::GreaterLessThan(left, right) => (left.to_string(), right.to_string()),
+    };
+
+    command("XRANGE")
+        .arg(stream)
+        .arg(left)
+        .arg(right)
+        .arg("COUNT")
+        .arg(count as i64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,20 +240,38 @@ mod tests {
             RedisStreamConsumer::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
                 .and_then(move |consumer| consumer.subscribe(options))
                 .and_then(|subscription|
-                    subscription.for_each(|entries| Ok(println!("Received message: {:?}", entries))))
+                    subscription.for_each(|entries| Ok(println!("Subscribe response: {:?}", entries))))
                 .map_err(|err| println!("On error: {:?}", err))
         );
     }
 
     #[test]
-    fn test_read_exact() {
+    fn test_read_explicit() {
         let options = ReadExplicitOptions::new("test_stream".to_string(), 2, EntryId::new(0, 0));
 
         tokio::run(
             RedisStreamConsumer::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
                 .and_then(move |consumer| consumer.read_explicit(options))
                 .map(|(consumer, entries)|
-                    println!("Received entries: {:?}", entries))
+                    println!("Read explicit response: {:?}", entries))
+                .map_err(|err| println!("On error: {:?}", err))
+        );
+    }
+
+    #[test]
+    fn test_range() {
+        let options
+            = RangeOptions::new("test_stream".to_string(),
+                                2,
+                                RangeType::GreaterLessThan(
+                                    EntryId::new(1581870414714, 0),
+                                    EntryId::new(1581914804239, 0))).unwrap();
+
+        tokio::run(
+            RedisStreamConsumer::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
+                .and_then(move |consumer| consumer.range(options))
+                .map(|(consumer, entries)|
+                    println!("Range response: {:?}", entries))
                 .map_err(|err| println!("On error: {:?}", err))
         );
     }

@@ -18,8 +18,18 @@ pub struct StreamEntry {
     values: Vec<(String, RedisValue)>,
 }
 
+#[derive(PartialEq)]
+pub struct RangeEntry {
+    /// Stream entry id is a simple string "milliseconds-id"
+    id: EntryId,
+    /// Note Redis allows to use key as a binary Bulk String
+    /// but in the library it is forbidden for easy of use API.
+    /// Value may be any of the RedisValue types
+    values: Vec<(String, RedisValue)>,
+}
+
 impl StreamEntry {
-    pub(crate) fn new(stream: String, id: EntryId, values: Vec<(String, RedisValue)>) -> StreamEntry {
+    pub(crate) fn new(stream: String, id: EntryId, values: Vec<(String, RedisValue)>) -> Self {
         StreamEntry {
             stream,
             id,
@@ -28,7 +38,16 @@ impl StreamEntry {
     }
 }
 
-/// Parse RedisValue to vec of StreamEntry
+impl RangeEntry {
+    pub(crate) fn new(id: EntryId, values: Vec<(String, RedisValue)>) -> Self {
+        RangeEntry {
+            id,
+            values,
+        }
+    }
+}
+
+/// Parse XREAD/XREADGROUP result: RedisValue to vec of StreamEntry
 pub fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> {
     // usually count of entries within one stream is 1,
     // because in finally case we subscribe on only new messages
@@ -52,6 +71,23 @@ pub fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> 
     Ok(stream_entries)
 }
 
+/// Parse XRANGE result: RedisValue to vec of StreamEntry
+pub fn parse_range_entries(value: RedisValue) -> RedisResult<Vec<RangeEntry>> {
+    let entries: Vec<EntryInfo> = from_redis_value(&value)?;
+
+    let mut result_entries: Vec<RangeEntry> = Vec::with_capacity(entries.len());
+
+    for entry in entries.into_iter() {
+        // transform the entry value to the RSEntry
+        let entry =
+            RangeEntry::new(EntryId::from_string(entry.id)?, entry.key_values);
+
+        result_entries.push(entry);
+    }
+
+    Ok(result_entries)
+}
+
 struct StreamInfo {
     id: String,
     entries: Vec<EntryInfo>,
@@ -66,6 +102,13 @@ struct EntryInfo {
 impl fmt::Debug for StreamEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(stream={}, id=\"{:?}\", {:?})", self.stream, self.id, self.values)?;
+        Ok(())
+    }
+}
+
+impl fmt::Debug for RangeEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(id=\"{:?}\", {:?})", self.id, self.values)?;
         Ok(())
     }
 }
