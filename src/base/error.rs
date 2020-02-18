@@ -1,7 +1,7 @@
 use std::fmt;
 use std::error::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RedisErrorKind {
     InternalError,
     IncorrectConversion,

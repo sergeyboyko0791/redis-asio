@@ -105,6 +105,12 @@ impl RangeOptions {
     }
 }
 
+impl RedisGroup {
+    pub fn new(group: String, consumer: String) -> RedisGroup {
+        RedisGroup { group, consumer }
+    }
+}
+
 enum StreamInternalCommand {
     ListenNextMessage,
 }
@@ -171,11 +177,7 @@ pub(crate) fn range_cmd(options: RangeOptions) -> RedisCommand
 {
     let RangeOptions { stream, count, range } = options;
 
-    let (left, right) = match range {
-        RangeType::GreaterThan(left) => (left.to_string(), "+".to_string()),
-        RangeType::LessThan(right) => ("-".to_string(), right.to_string()),
-        RangeType::GreaterLessThan(left, right) => (left.to_string(), right.to_string()),
-    };
+    let (left, right) = range.to_left_right();
 
     command("XRANGE")
         .arg(stream)

@@ -1,5 +1,5 @@
 mod base;
-mod stream;
+pub mod stream;
 
 pub use base::{RedisCoreConnection,
                RedisResult,

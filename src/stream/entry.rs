@@ -3,29 +3,29 @@ use std::num::ParseIntError;
 use std::error::Error;
 use std::fmt;
 
-#[derive(PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd)]
 pub struct EntryId((u64, u64));
 
 #[derive(PartialEq)]
 pub struct StreamEntry {
     /// Stream name
-    stream: String,
+    pub stream: String,
     /// Stream entry id is a simple string "milliseconds-id"
-    id: EntryId,
+    pub id: EntryId,
     /// Note Redis allows to use key as a binary Bulk String
     /// but in the library it is forbidden for easy of use API.
     /// Value may be any of the RedisValue types
-    values: Vec<(String, RedisValue)>,
+    pub values: Vec<(String, RedisValue)>,
 }
 
 #[derive(PartialEq)]
 pub struct RangeEntry {
     /// Stream entry id is a simple string "milliseconds-id"
-    id: EntryId,
+    pub id: EntryId,
     /// Note Redis allows to use key as a binary Bulk String
     /// but in the library it is forbidden for easy of use API.
     /// Value may be any of the RedisValue types
-    values: Vec<(String, RedisValue)>,
+    pub values: Vec<(String, RedisValue)>,
 }
 
 impl StreamEntry {
@@ -100,6 +100,7 @@ struct EntryInfo {
 }
 
 pub enum RangeType {
+    Any,
     GreaterThan(EntryId),
     LessThan(EntryId),
     GreaterLessThan(EntryId, EntryId),
@@ -111,6 +112,15 @@ impl RangeType {
         match self {
             RangeType::GreaterLessThan(left, right) => left < right,
             _ => true
+        }
+    }
+
+    pub(crate) fn to_left_right(&self) -> (String, String) {
+        match self {
+            RangeType::Any => ("-".to_string(), "+".to_string()),
+            RangeType::GreaterThan(left) => (left.to_string(), "+".to_string()),
+            RangeType::LessThan(right) => ("-".to_string(), right.to_string()),
+            RangeType::GreaterLessThan(left, right) => (left.to_string(), right.to_string()),
         }
     }
 }

@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use futures::{Future, Stream, Sink};
 use tokio_io::AsyncRead;
 use futures::sync::mpsc::{channel, Sender, Receiver};
+use std::error::Error;
 
 
 pub struct RedisStream {
@@ -66,9 +67,9 @@ impl RedisStream {
             })
     }
 
-    pub fn ack_entry(self, options: AckOptions)
+    pub fn ack_entry(self, stream: String, group: String, entry_id: EntryId)
                      -> impl Future<Item=(Self, AckResponse), Error=RedisError> + Send + 'static {
-        self.connection.send(ack_entry_command(options))
+        self.connection.send(ack_entry_command(stream, group, entry_id))
             .and_then(|(connection, response)| {
                 let response = match response {
                     RedisValue::Int(x) => AckResponse::new(x),
@@ -83,6 +84,24 @@ impl RedisStream {
         self.connection.send(pending_list_command(options))
             .and_then(|(connection, response)| {
                 Ok((RedisStream { connection }, from_redis_value(&response)?))
+            })
+    }
+
+    pub fn touch_group(self, stream: String, group: String)
+                       -> impl Future<Item=(), Error=RedisError> + Send + 'static {
+        self.connection.send(touch_group_command(stream, group))
+            .then(|res| {
+                match res {
+                    // do not keep the connection in anyway because we could receive BUSYGROUP from server
+                    Ok((_connection, _)) => Ok(()),
+                    Err(err) => {
+                        if err.error == RedisErrorKind::ReceiveError
+                            && err.description().contains("BUSYGROUP") {
+                            return Ok(());
+                        }
+                        Err(err)
+                    }
+                }
             })
     }
 }

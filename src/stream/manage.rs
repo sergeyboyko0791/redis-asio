@@ -3,26 +3,17 @@ use std::net::SocketAddr;
 use futures::Future;
 use crate::{RedisCoreConnection, RedisError, RedisErrorKind, RedisValue, RedisCommand, ToRedisArgument, FromRedisValue, command, from_redis_value, RedisResult};
 
-pub struct AckOptions {
-    /// Stream name
-    pub(crate) stream: String,
-    /// Group name
-    pub(crate) group: String,
-    /// Entry id that are acknowledged
-    pub(crate) entry_id: EntryId,
-}
-
 pub struct PendingOptions {
-    /// Stream name
+    /// Stream name.
     pub(crate) stream: String,
-    /// Group name
+    /// Group name.
     pub(crate) group: String,
-    /// Consumer name
+    /// Consumer name.
     pub(crate) consumer: String,
-    /// Get entries with ID in the range
+    /// Get entries with ID in the range.
     pub(crate) range: RangeType,
-    /// Max count of entries
-    pub(crate) count: u16,
+    /// Max count of entries. All pending entries will be requested ff the values is None.
+    pub(crate) count: Option<u16>,
 }
 
 pub struct PendingMessage {
@@ -42,31 +33,38 @@ pub enum AckResponse {
     NotExists,
 }
 
-pub(crate) fn ack_entry_command(options: AckOptions) -> RedisCommand {
+pub(crate) fn ack_entry_command(stream: String, group: String, entry_id: EntryId) -> RedisCommand {
     command("XACK")
-        .arg(options.stream)
-        .arg(options.group)
-        .arg(options.entry_id.to_string())
+        .arg(stream)
+        .arg(group)
+        .arg(entry_id.to_string())
 }
 
 pub(crate) fn pending_list_command(options: PendingOptions) -> RedisCommand {
-    let (left, right) = match options.range {
-        RangeType::GreaterThan(left) => (left.to_string(), "+".to_string()),
-        RangeType::LessThan(right) => ("-".to_string(), right.to_string()),
-        RangeType::GreaterLessThan(left, right) => (left.to_string(), right.to_string()),
-    };
+    let (left, right) = options.range.to_left_right();
 
-    command("XPENDING")
+    let mut cmd = command("XPENDING")
         .arg(options.stream)
         .arg(options.group)
         .arg(left)
-        .arg(right)
-        .arg(options.count)
-        .arg(options.consumer)
+        .arg(right);
+    if let Some(count) = options.count {
+        cmd.arg_mut(count);
+    }
+
+    cmd.arg(options.consumer)
+}
+
+pub(crate) fn touch_group_command(stream: String, group: String) -> RedisCommand {
+    command("XGROUP")
+        .arg("CREATE")
+        .arg(stream)
+        .arg(group)
+        .arg("$")
 }
 
 impl AckResponse {
-    pub fn new(count_acknowledged: i64) -> Self {
+    pub(crate) fn new(count_acknowledged: i64) -> Self {
         match count_acknowledged {
             0 => AckResponse::NotExists,
             _ => AckResponse::Ok,
@@ -75,7 +73,7 @@ impl AckResponse {
 }
 
 impl PendingOptions {
-    pub fn new(stream: String, group: String, consumer: String, range: RangeType, count: u16)
+    pub fn new(stream: String, group: String, consumer: String, range: RangeType)
                -> RedisResult<Self> {
         if !range.is_valid() {
             return Err(
@@ -83,6 +81,19 @@ impl PendingOptions {
                                 format!("Left bound should be less than right bound")));
         }
 
+        let count: Option<u16> = None;
+        Ok(PendingOptions { stream, group, consumer, range, count })
+    }
+
+    pub fn with_count(stream: String, group: String, consumer: String, range: RangeType, count: u16)
+                      -> RedisResult<Self> {
+        if !range.is_valid() {
+            return Err(
+                RedisError::new(RedisErrorKind::InvalidOptions,
+                                format!("Left bound should be less than right bound")));
+        }
+
+        let count = Some(count);
         Ok(PendingOptions { stream, group, consumer, range, count })
     }
 }

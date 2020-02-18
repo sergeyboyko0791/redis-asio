@@ -8,8 +8,8 @@ pub use entry::{StreamEntry, EntryId, RangeEntry, RangeType, parse_stream_entrie
 pub use stream::RedisStream;
 pub use produce::AddOptions;
 pub use consume::{SubscribeOptions, ReadExplicitOptions, RangeOptions, RedisGroup, Subscribe};
-pub use manage::{AckOptions, AckResponse, PendingOptions, PendingMessage};
+pub use manage::{AckResponse, PendingOptions, PendingMessage};
 
 use produce::add_command;
 use consume::{subscribe, subscribe_cmd, read_explicit_cmd, range_cmd};
-use manage::{ack_entry_command, pending_list_command};
+use manage::{ack_entry_command, pending_list_command, touch_group_command};
