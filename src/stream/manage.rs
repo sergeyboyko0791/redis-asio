@@ -28,16 +28,27 @@ pub struct PendingMessage {
     pub delivered_times: i64,
 }
 
+pub struct TouchGroupOptions {
+    pub(crate) stream: String,
+    pub(crate) group: String,
+}
+
+pub struct AckOptions {
+    pub(crate) stream: String,
+    pub(crate) group: String,
+    pub(crate) entry_id: EntryId,
+}
+
 pub enum AckResponse {
     Ok,
     NotExists,
 }
 
-pub(crate) fn ack_entry_command(stream: String, group: String, entry_id: EntryId) -> RedisCommand {
+pub(crate) fn ack_entry_command(options: AckOptions) -> RedisCommand {
     command("XACK")
-        .arg(stream)
-        .arg(group)
-        .arg(entry_id.to_string())
+        .arg(options.stream)
+        .arg(options.group)
+        .arg(options.entry_id.to_string())
 }
 
 pub(crate) fn pending_list_command(options: PendingOptions) -> RedisCommand {
@@ -55,11 +66,11 @@ pub(crate) fn pending_list_command(options: PendingOptions) -> RedisCommand {
     cmd.arg(options.consumer)
 }
 
-pub(crate) fn touch_group_command(stream: String, group: String) -> RedisCommand {
+pub(crate) fn touch_group_command(options: TouchGroupOptions) -> RedisCommand {
     command("XGROUP")
         .arg("CREATE")
-        .arg(stream)
-        .arg(group)
+        .arg(options.stream)
+        .arg(options.group)
         .arg("$")
 }
 
@@ -95,6 +106,18 @@ impl PendingOptions {
 
         let count = Some(count);
         Ok(PendingOptions { stream, group, consumer, range, count })
+    }
+}
+
+impl TouchGroupOptions {
+    pub fn new(stream: String, group: String) -> Self {
+        TouchGroupOptions { stream, group }
+    }
+}
+
+impl AckOptions {
+    pub fn new(stream: String, group: String, entry_id: EntryId) -> Self {
+        AckOptions { stream, group, entry_id }
     }
 }
 

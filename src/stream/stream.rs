@@ -67,9 +67,9 @@ impl RedisStream {
             })
     }
 
-    pub fn ack_entry(self, stream: String, group: String, entry_id: EntryId)
+    pub fn ack_entry(self, options: AckOptions)
                      -> impl Future<Item=(Self, AckResponse), Error=RedisError> + Send + 'static {
-        self.connection.send(ack_entry_command(stream, group, entry_id))
+        self.connection.send(ack_entry_command(options))
             .and_then(|(connection, response)| {
                 let response = match response {
                     RedisValue::Int(x) => AckResponse::new(x),
@@ -87,9 +87,9 @@ impl RedisStream {
             })
     }
 
-    pub fn touch_group(self, stream: String, group: String)
+    pub fn touch_group(self, options: TouchGroupOptions)
                        -> impl Future<Item=(), Error=RedisError> + Send + 'static {
-        self.connection.send(touch_group_command(stream, group))
+        self.connection.send(touch_group_command(options))
             .then(|res| {
                 match res {
                     // do not keep the connection in anyway because we could receive BUSYGROUP from server

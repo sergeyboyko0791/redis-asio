@@ -7,31 +7,26 @@ use futures::{Future, Stream, Sink};
 use futures::future::join_all;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded};
 
-use redis_asio::{RedisCommand, FromRedisValue, RedisCoreConnection, from_redis_value, command, RedisResult, RedisError, RedisErrorKind};
-use redis_asio::stream::{RedisStream, StreamEntry, PendingOptions, RangeType, PendingMessage, EntryId, AckResponse, SubscribeOptions, RedisGroup};
-
-const STREAM: &str = "ConsumerTest";
-const GROUP: &str = "MyGroup";
-const CONSUMER: &str = "CustomConsumer";
+use redis_asio::{RedisCommand, FromRedisValue, RedisCoreConnection, from_redis_value, command,
+                 RedisResult, RedisError, RedisErrorKind};
+use redis_asio::stream::{RedisStream, StreamEntry, PendingOptions, RangeType, PendingMessage, EntryId, AckResponse, SubscribeOptions, RedisGroup, TouchGroupOptions, AckOptions};
 
 fn main() {
     let redis_address = env::var("REDIS_URL")
         .unwrap_or("127.0.0.1:6379".to_string())
         .parse::<SocketAddr>().expect("Couldn't parse Redis URl");
 
-    let pending_options =
-        PendingOptions::new(STREAM.to_string(),
-                            GROUP.to_string(),
-                            CONSUMER.to_string(),
-                            RangeType::Any).unwrap();
+    let stream_name: String = "ConsumerTest".to_string();
+    let group_name: String = "MyGroup".to_string();
+    let consumer_name: String = "CustomConsumer".to_string();
 
-    let group = RedisGroup::new(GROUP.to_string(), CONSUMER.to_string());
-    let subscribe_options =
-        SubscribeOptions::with_group(STREAM.to_string(), group);
+    let touch_options = TouchGroupOptions::new(stream_name.clone(), group_name.clone());
 
     let create_group = RedisStream::connect(&redis_address)
         .and_then(move |con|
-            con.touch_group(STREAM.to_string(), GROUP.to_string()))
+            // create group if the one does not exists yet
+            con.touch_group(touch_options)
+        )
         // ignore an error if the group exists already
         .then(|_| -> RedisResult<()> { Ok(()) });
 
@@ -51,20 +46,28 @@ fn main() {
             let consumer = RedisStream::connect(&redis_address);
             consumer.join(manager)
         })
-        .and_then(move |(consumer, manager)| {
+        .and_then(move |(connection, manager)| {
             let (tx, rx) = unbounded::<EntryId>();
+
+            // copy of stream_name and group_name to move it into ack_entry future
+            let stream = stream_name.clone();
+            let group = group_name.clone();
 
             let ack_entry = rx
                 .map_err(|err|
                     RedisError::new(RedisErrorKind::InternalError,
                                     "Something went wrong with UnboundedChannel".to_string()))
-                .fold(manager, ack_stream_entry)
+                .fold(manager, move |manager, id_to_ack|
+                    ack_stream_entry(manager, stream.clone(), group.clone(), id_to_ack))
                 .map(|_| ())
                 .map_err(|_| ());
             tokio::spawn(ack_entry);
 
+            let group = RedisGroup::new(group_name, consumer_name);
+            let options = SubscribeOptions::with_group(stream_name, group);
+
             let process_entry =
-                consumer.subscribe(subscribe_options)
+                connection.subscribe(options)
                     .and_then(move |subscribe|
                         subscribe.for_each(move |entries|
                             process_stream_entries(tx.clone(), entries)));
@@ -75,9 +78,11 @@ fn main() {
     tokio::run(consumer);
 }
 
-fn ack_stream_entry(manager: RedisStream, id_to_ack: EntryId)
+fn ack_stream_entry(manager: RedisStream, stream: String, group: String, id_to_ack: EntryId)
                     -> impl Future<Item=RedisStream, Error=RedisError> {
-    manager.ack_entry(STREAM.to_string(), GROUP.to_string(), id_to_ack.clone())
+    let options = AckOptions::new(stream.clone(), group.clone(), id_to_ack.clone());
+
+    manager.ack_entry(options)
         .map(move |(manager, response)| {
             match response {
                 AckResponse::Ok => println!("{:?} is acknowledged", id_to_ack.to_string()),
