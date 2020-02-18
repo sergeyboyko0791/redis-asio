@@ -99,6 +99,22 @@ struct EntryInfo {
     key_values: Vec<(String, RedisValue)>,
 }
 
+pub enum RangeType {
+    GreaterThan(EntryId),
+    LessThan(EntryId),
+    GreaterLessThan(EntryId, EntryId),
+}
+
+impl RangeType {
+    /// Check if the left bound is less than the right bound
+    pub fn is_valid(&self) -> bool {
+        match self {
+            RangeType::GreaterLessThan(left, right) => left < right,
+            _ => true
+        }
+    }
+}
+
 impl fmt::Debug for StreamEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(stream={}, id=\"{:?}\", {:?})", self.stream, self.id, self.values)?;
@@ -118,6 +134,7 @@ impl EntryId {
         EntryId((ms, id))
     }
 
+    // TODO replace it to the FromRedisValue trait implementation
     // Parse the Redis Stream Entry as pair: <milliseconds, id>
     pub(crate) fn from_string(id: String) -> RedisResult<EntryId> {
         const ENTRY_ID_CHUNK_LEN: usize = 2;

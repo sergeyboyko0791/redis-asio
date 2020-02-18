@@ -116,7 +116,7 @@ impl<T: FromRedisValue> FromRedisValue for Vec<T> {
 }
 
 // TODO make macro and implenent that for (T, ..., T)
-impl<T1, T2:> FromRedisValue for (T1, T2)
+impl<T1, T2> FromRedisValue for (T1, T2)
     where T1: FromRedisValue + fmt::Debug,
           T2: FromRedisValue + fmt::Debug {
     fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
@@ -125,9 +125,8 @@ impl<T1, T2:> FromRedisValue for (T1, T2)
             return Err(
                 RedisError::new(
                     RedisErrorKind::ParseError,
-                    format!("Couldn't convert the Redis value: \"{:?}\" to tuple len {}",
-                            values,
-                            values.len())));
+                    format!("Couldn't convert the Redis value: \"{:?}\" to tuple of 2 elements",
+                            values)));
         }
 
         let first: T1 = from_redis_value(&values[0])?;
