@@ -1,7 +1,7 @@
-use tokio_io::AsyncRead;
+use tokio_codec::Decoder;
+use tokio_tcp::TcpStream;
 use futures::{Future, Stream, Sink, Async, try_ready};
 use crate::{RedisValue, RedisCommand, RespInternalValue, RedisCodec, RedisError, RedisErrorKind};
-use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
 use core::marker::Send as SendMarker;
 use std::error::Error;
@@ -18,7 +18,10 @@ impl RedisCoreConnection {
             .map_err(|err| RedisError::new(RedisErrorKind::ConnectionError, err.description().into()))
             .map(|stream| {
                 // TODO use tokio_codec::Decoder::framed instead
-                let (tx, rx) = stream.framed(RedisCodec).split();
+//                let (tx, rx) = stream.framed(RedisCodec).split();
+//                let (tx, rx) = Decoder::framed(RedisCodec, stream).split();
+                let codec = RedisCodec;
+                let (tx, rx) = codec.framed(stream).split();
                 Self::new(tx, rx)
             })
     }

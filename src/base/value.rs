@@ -136,13 +136,6 @@ impl<T1, T2> FromRedisValue for (T1, T2)
     }
 }
 
-// TODO revert it
-//impl fmt::Debug for RedisValue {
-//    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        write!(f, "{:?}", to_string(&self))
-//    }
-//}
-
 fn to_conversion_error<T>(err: T) -> RedisError
     where T: Error {
     RedisError::new(RedisErrorKind::IncorrectConversion, err.description().to_string())
@@ -152,21 +145,6 @@ fn conversion_error_from_value<T>(src_value: &T, dst_type: &str) -> RedisError
     where T: fmt::Debug {
     RedisError::new(RedisErrorKind::IncorrectConversion,
                     format!("{:?} is not convertible to {}", src_value, dst_type))
-}
-
-fn to_string(val: &RedisValue) -> String {
-    match val {
-        RedisValue::Nil => return String::from("Nil"),
-        RedisValue::Ok => return String::from("OK"),
-        RedisValue::Status(x) => format!("Status({:?})", x),
-        RedisValue::Int(x) => format!("Int({:?})", x.to_string()),
-        RedisValue::BulkString(x) => format!("BulkString({:?})", x),
-        RedisValue::Array(values) =>
-            format!("{:?}",
-                    values.iter()
-                        .map(|v| to_string(v))
-                        .collect::<Vec<String>>())
-    }
 }
 
 fn int_from_redis_value<T>(value: &RedisValue) -> RedisResult<T>

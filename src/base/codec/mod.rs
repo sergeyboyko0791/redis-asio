@@ -1,4 +1,4 @@
-use tokio_io::codec::{Encoder, Decoder};
+use tokio_codec::{Encoder, Decoder};
 use bytes::BytesMut;
 
 use super::{RedisResult, RespInternalValue, RedisError, RedisErrorKind, RedisCommand};

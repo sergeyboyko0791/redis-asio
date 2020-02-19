@@ -2,9 +2,9 @@ use crate::{RedisValue, RedisCoreConnection, RedisError, RedisErrorKind,
             ToRedisArgument, from_redis_value};
 use super::*;
 
+use std::error::Error;
 use std::net::SocketAddr;
 use futures::{Future, Sink};
-use std::error::Error;
 
 
 pub struct RedisStream {
@@ -102,72 +102,5 @@ impl RedisStream {
                     }
                 }
             })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use futures::Stream;
-    use super::*;
-
-    #[test]
-    fn test_add() {
-        let options = AddOptions::new("test_stream".to_string());
-
-        tokio::run(
-            RedisStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-                .and_then(move |producer|
-                    producer.add(options, vec![
-                        ("key1".to_string(), "value1"),
-                        ("key2".to_string(), "value2")])
-                )
-                .map(|(_, entry_id)|
-                    println!("Add response: {:?}", entry_id))
-                .map_err(|err| println!("On error: {:?}", err))
-        );
-    }
-
-    #[test]
-    fn test_subscribe() {
-        let options = SubscribeOptions::new("test_stream".to_string());
-
-        tokio::run(
-            RedisStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-                .and_then(move |consumer| consumer.subscribe(options))
-                .and_then(|subscription|
-                    subscription.for_each(|entries| Ok(println!("Subscribe response: {:?}", entries))))
-                .map_err(|err| println!("On error: {:?}", err))
-        );
-    }
-
-    #[test]
-    fn test_read_explicit() {
-        let options = ReadExplicitOptions::new("test_stream".to_string(), 2, EntryId::new(0, 0));
-
-        tokio::run(
-            RedisStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-                .and_then(move |consumer| consumer.read_explicit(options))
-                .map(|(_, entries)|
-                    println!("Read explicit response: {:?}", entries))
-                .map_err(|err| println!("On error: {:?}", err))
-        );
-    }
-
-    #[test]
-    fn test_range() {
-        let options
-            = RangeOptions::new("test_stream".to_string(),
-                                2,
-                                RangeType::GreaterLessThan(
-                                    EntryId::new(1581870414714, 0),
-                                    EntryId::new(1581914804239, 0))).unwrap();
-
-        tokio::run(
-            RedisStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-                .and_then(move |consumer| consumer.range(options))
-                .map(|(_, entries)|
-                    println!("Range response: {:?}", entries))
-                .map_err(|err| println!("On error: {:?}", err))
-        );
     }
 }
