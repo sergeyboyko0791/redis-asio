@@ -1,4 +1,3 @@
-use super::{RedisValue, RedisResult};
 use crate::base::RespInternalValue;
 
 pub fn command(cmd: &str) -> RedisCommand {

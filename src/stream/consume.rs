@@ -1,5 +1,6 @@
-use crate::*;
-use super::*;
+use crate::{RedisResult, RedisValue, RedisError, RedisErrorKind, RespInternalValue,
+            RedisCommand, command};
+use super::{EntryId, RangeType, StreamEntry, parse_stream_entries};
 use futures::{Stream, Future, Sink};
 use futures::sync::mpsc::{channel, Sender, Receiver};
 use futures::Async;
@@ -94,7 +95,6 @@ impl ReadExplicitOptions {
 
 impl RangeOptions {
     pub fn new(stream: String, count: u16, range: RangeType) -> RedisResult<RangeOptions> {
-        let group: Option<RedisGroup> = None;
         if !range.is_valid() {
             return Err(
                 RedisError::new(RedisErrorKind::InvalidOptions,
@@ -193,8 +193,8 @@ fn fwd_from_channel_to_srv<T>(to_srv: T,
                               -> impl Future<Item=(), Error=RedisError> + Send + 'static
     where T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
     rx
-        .map_err(|err| RedisError::new(RedisErrorKind::InternalError,
-                                       "Cannot read from internal channel".into()))
+        .map_err(|_| RedisError::new(RedisErrorKind::InternalError,
+                                     "Cannot read from internal channel".into()))
         .fold(to_srv, move |to_srv, msg| {
             match msg {
                 StreamInternalCommand::ListenNextMessage =>
@@ -228,18 +228,16 @@ fn process_from_srv_and_notify_channel<F>(from_srv: F,
 }
 
 fn xread_cmd_from(group: Option<RedisGroup>) -> RedisCommand {
-    let cmd =
+    let mut cmd =
         match &group {
-            Some(_) => "XREADGROUP",
-            _ => "XREAD",
+            Some(_) => command("XREADGROUP"),
+            _ => command("XREAD"),
         };
 
-    let mut cmd = command(cmd);
-    match group {
-        Some(RedisGroup { group, consumer }) =>
-            cmd.arg("GROUP")
-                .arg(group.as_str())
-                .arg(consumer.as_str()),
-        _ => cmd
+    if let Some(RedisGroup { group, consumer }) = group {
+        cmd.arg_mut("GROUP");
+        cmd.arg_mut(group.as_str());
+        cmd.arg_mut(consumer.as_str());
     }
+    cmd
 }

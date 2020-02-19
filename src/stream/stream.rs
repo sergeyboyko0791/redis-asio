@@ -1,10 +1,9 @@
-use crate::*;
+use crate::{RedisValue, RedisCoreConnection, RedisError, RedisErrorKind,
+            ToRedisArgument, from_redis_value};
 use super::*;
 
 use std::net::SocketAddr;
-use futures::{Future, Stream, Sink};
-use tokio_io::AsyncRead;
-use futures::sync::mpsc::{channel, Sender, Receiver};
+use futures::{Future, Sink};
 use std::error::Error;
 
 
@@ -80,10 +79,10 @@ impl RedisStream {
     }
 
     pub fn pending_list(self, options: PendingOptions)
-                        -> impl Future<Item=(Self, Vec<PendingMessage>), Error=RedisError> + Send + 'static {
+                        -> impl Future<Item=(Self, Vec<StreamEntry>), Error=RedisError> + Send + 'static {
         self.connection.send(pending_list_command(options))
             .and_then(|(connection, response)| {
-                Ok((RedisStream { connection }, from_redis_value(&response)?))
+                Ok((RedisStream { connection }, parse_stream_entries(response)?))
             })
     }
 
@@ -108,6 +107,7 @@ impl RedisStream {
 
 #[cfg(test)]
 mod tests {
+    use futures::Stream;
     use super::*;
 
     #[test]
@@ -121,7 +121,7 @@ mod tests {
                         ("key1".to_string(), "value1"),
                         ("key2".to_string(), "value2")])
                 )
-                .map(|(consumer, entry_id)|
+                .map(|(_, entry_id)|
                     println!("Add response: {:?}", entry_id))
                 .map_err(|err| println!("On error: {:?}", err))
         );
@@ -147,7 +147,7 @@ mod tests {
         tokio::run(
             RedisStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
                 .and_then(move |consumer| consumer.read_explicit(options))
-                .map(|(consumer, entries)|
+                .map(|(_, entries)|
                     println!("Read explicit response: {:?}", entries))
                 .map_err(|err| println!("On error: {:?}", err))
         );
@@ -165,7 +165,7 @@ mod tests {
         tokio::run(
             RedisStream::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
                 .and_then(move |consumer| consumer.range(options))
-                .map(|(consumer, entries)|
+                .map(|(_, entries)|
                     println!("Range response: {:?}", entries))
                 .map_err(|err| println!("On error: {:?}", err))
         );

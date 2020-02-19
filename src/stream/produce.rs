@@ -1,7 +1,5 @@
 use super::EntryId;
-use std::net::SocketAddr;
-use futures::Future;
-use crate::{RedisCoreConnection, RedisError, RedisErrorKind, RedisValue, RedisCommand, ToRedisArgument, command, from_redis_value};
+use crate::{RedisCommand, ToRedisArgument, command};
 
 pub struct AddOptions {
     /// Stream name

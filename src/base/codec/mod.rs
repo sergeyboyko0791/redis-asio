@@ -1,7 +1,7 @@
 use tokio_io::codec::{Encoder, Decoder};
 use bytes::BytesMut;
 
-use super::{RedisResult, RespInternalValue, RedisError, RedisErrorKind, RedisCommand, command};
+use super::{RedisResult, RespInternalValue, RedisError, RedisErrorKind, RedisCommand};
 
 mod encode;
 mod decode;
@@ -43,7 +43,7 @@ impl Decoder for RedisCodec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::{RedisCommand, command};
+    use crate::command;
 
     #[test]
     fn test_encode() {

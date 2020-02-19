@@ -1,7 +1,5 @@
-use super::{AddOptions, EntryId, RangeType};
-use std::net::SocketAddr;
-use futures::Future;
-use crate::{RedisCoreConnection, RedisError, RedisErrorKind, RedisValue, RedisCommand, ToRedisArgument, FromRedisValue, command, from_redis_value, RedisResult};
+use super::EntryId;
+use crate::{RedisCommand, RedisResult, command};
 
 pub struct PendingOptions {
     /// Stream name.
@@ -10,22 +8,10 @@ pub struct PendingOptions {
     pub(crate) group: String,
     /// Consumer name.
     pub(crate) consumer: String,
-    /// Get entries with ID in the range.
-    pub(crate) range: RangeType,
+    /// Get entries with ID greater than the start_id
+    pub(crate) start_id: EntryId,
     /// Max count of entries. All pending entries will be requested ff the values is None.
     pub(crate) count: Option<u16>,
-}
-
-pub struct PendingMessage {
-    /// The ID of the message.
-    pub id: EntryId,
-    /// The name of the consumer that fetched the message and has still to acknowledge it.
-    pub consumer: String,
-    /// The number of milliseconds that elapsed since the last time
-    /// this message was delivered to this consumer.
-    pub last_delivered_time_ms: i64,
-    /// The number of times this message was delivered.
-    pub delivered_times: i64,
 }
 
 pub struct TouchGroupOptions {
@@ -52,18 +38,18 @@ pub(crate) fn ack_entry_command(options: AckOptions) -> RedisCommand {
 }
 
 pub(crate) fn pending_list_command(options: PendingOptions) -> RedisCommand {
-    let (left, right) = options.range.to_left_right();
-
-    let mut cmd = command("XPENDING")
-        .arg(options.stream)
+    let mut cmd = command("XGROUPREAD")
+        .arg("GROUP")
         .arg(options.group)
-        .arg(left)
-        .arg(right);
+        .arg(options.consumer);
     if let Some(count) = options.count {
         cmd.arg_mut(count);
     }
 
-    cmd.arg(options.consumer)
+    cmd
+        .arg("STREAMS")
+        .arg(options.stream)
+        .arg(options.start_id.to_string())
 }
 
 pub(crate) fn touch_group_command(options: TouchGroupOptions) -> RedisCommand {
@@ -85,28 +71,16 @@ impl AckResponse {
 }
 
 impl PendingOptions {
-    pub fn new(stream: String, group: String, consumer: String, range: RangeType)
+    pub fn new(stream: String, group: String, consumer: String, start_id: EntryId)
                -> RedisResult<Self> {
-        if !range.is_valid() {
-            return Err(
-                RedisError::new(RedisErrorKind::InvalidOptions,
-                                format!("Left bound should be less than right bound")));
-        }
-
         let count: Option<u16> = None;
-        Ok(PendingOptions { stream, group, consumer, range, count })
+        Ok(PendingOptions { stream, group, consumer, start_id, count })
     }
 
-    pub fn with_count(stream: String, group: String, consumer: String, range: RangeType, count: u16)
+    pub fn with_count(stream: String, group: String, consumer: String, start_id: EntryId, count: u16)
                       -> RedisResult<Self> {
-        if !range.is_valid() {
-            return Err(
-                RedisError::new(RedisErrorKind::InvalidOptions,
-                                format!("Left bound should be less than right bound")));
-        }
-
         let count = Some(count);
-        Ok(PendingOptions { stream, group, consumer, range, count })
+        Ok(PendingOptions { stream, group, consumer, start_id, count })
     }
 }
 
@@ -119,25 +93,5 @@ impl TouchGroupOptions {
 impl AckOptions {
     pub fn new(stream: String, group: String, entry_id: EntryId) -> Self {
         AckOptions { stream, group, entry_id }
-    }
-}
-
-impl FromRedisValue for PendingMessage {
-    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
-        let mut values: Vec<RedisValue> = from_redis_value(value)?;
-        if values.len() != 5 {
-            return Err(
-                RedisError::new(
-                    RedisErrorKind::ParseError,
-                    format!("Couldn't convert the Redis value: \"{:?}\" to PendingMessage", values)));
-        }
-
-        let id_str: String = from_redis_value(&values[0])?;
-        let id = EntryId::from_string(id_str)?;
-        let consumer: String = from_redis_value(&values[1])?;
-        let last_delivered_time_ms: i64 = from_redis_value(&values[2])?;
-        let delivered_times: i64 = from_redis_value(&values[3])?;
-
-        Ok(PendingMessage { id, consumer, last_delivered_time_ms, delivered_times })
     }
 }

@@ -120,7 +120,7 @@ impl<T1, T2> FromRedisValue for (T1, T2)
     where T1: FromRedisValue + fmt::Debug,
           T2: FromRedisValue + fmt::Debug {
     fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
-        let mut values: Vec<RedisValue> = from_redis_value(value)?;
+        let values: Vec<RedisValue> = from_redis_value(value)?;
         if values.len() != 2 {
             return Err(
                 RedisError::new(

@@ -5,12 +5,10 @@ use std::env;
 use std::io;
 use std::net::SocketAddr;
 use futures::{Future, Stream, Sink};
-use futures::future::join_all;
-use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded};
+use futures::sync::mpsc::{UnboundedSender, unbounded};
 
-use redis_asio::{RedisCommand, FromRedisValue, RedisCoreConnection, from_redis_value, command,
-                 RedisResult, RedisError, RedisErrorKind};
-use redis_asio::stream::{RedisStream, StreamEntry, PendingOptions, RangeType, PendingMessage, EntryId, AckResponse, SubscribeOptions, RedisGroup, TouchGroupOptions, AckOptions};
+use redis_asio::{RedisResult, RedisError, RedisErrorKind};
+use redis_asio::stream::{RedisStream, StreamEntry, EntryId, AckResponse, SubscribeOptions, RedisGroup, TouchGroupOptions, AckOptions};
 
 fn main() {
     println!("Consumer example has started");
@@ -49,7 +47,7 @@ fn main() {
             let group = group_name.clone();
 
             let ack_entry = rx
-                .map_err(|err|
+                .map_err(|_|
                     RedisError::new(RedisErrorKind::InternalError,
                                     "Something went wrong with UnboundedChannel".to_string()))
                 .fold(manager, move |manager, id_to_ack|

@@ -1,12 +1,6 @@
-use tokio_io::{AsyncRead, AsyncWrite};
-use futures::{Future, Stream, Sink, Poll, Async, future, try_ready, task};
-use crate::{RedisValue,
-            RedisCommand,
-            RespInternalValue,
-            RedisCodec,
-            RedisError,
-            RedisErrorKind,
-            command};
+use tokio_io::AsyncRead;
+use futures::{Future, Stream, Sink, Async, try_ready};
+use crate::{RedisValue, RedisCommand, RespInternalValue, RedisCodec, RedisError, RedisErrorKind};
 use tokio_tcp::TcpStream;
 use std::net::SocketAddr;
 use core::marker::Send as SendMarker;
@@ -23,6 +17,7 @@ impl RedisCoreConnection {
         TcpStream::connect(addr)
             .map_err(|err| RedisError::new(RedisErrorKind::ConnectionError, err.description().into()))
             .map(|stream| {
+                // TODO use tokio_codec::Decoder::framed instead
                 let (tx, rx) = stream.framed(RedisCodec).split();
                 Self::new(tx, rx)
             })
@@ -96,7 +91,7 @@ impl Future for Send {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use crate::from_redis_value;
+    use crate::{from_redis_value, command};
 
     #[test]
     fn test_get_set() {
