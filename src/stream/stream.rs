@@ -4,6 +4,7 @@ use super::*;
 
 use std::error::Error;
 use std::net::SocketAddr;
+use std::collections::HashMap;
 use futures::{Future, Sink};
 
 
@@ -18,8 +19,8 @@ impl RedisStream {
             .map(|connection| Self { connection })
     }
 
-    pub fn add<T>(self, options: AddOptions, key_values: Vec<(String, T)>)
-                  -> impl Future<Item=(RedisStream, EntryId), Error=RedisError> + Send + 'static
+    pub fn send_entry<T>(self, options: AddOptions, key_values: HashMap<String, T>)
+                         -> impl Future<Item=(RedisStream, EntryId), Error=RedisError> + Send + 'static
         where T: ToRedisArgument {
         self.connection.send(add_command(options, key_values))
             .and_then(|(connection, response)| {

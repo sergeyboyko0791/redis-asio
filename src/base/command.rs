@@ -4,6 +4,8 @@ pub fn command(cmd: &str) -> RedisCommand {
     RedisCommand::new(cmd)
 }
 
+// TODO delete clone trait
+#[derive(Clone)]
 pub enum RedisArgument {
     Int(i64),
     String(String),
@@ -15,6 +17,7 @@ pub struct RedisCommand {
 }
 
 pub trait ToRedisArgument {
+    // TODO delete it
     fn to_redis_argument(&self) -> RedisArgument;
 
     fn into_redis_argument(self) -> RedisArgument;
@@ -48,6 +51,16 @@ impl RedisArgument {
             RedisArgument::String(x) => RespInternalValue::BulkString(x.into()),
             RedisArgument::Bytes(x) => RespInternalValue::BulkString(x),
         }
+    }
+}
+
+impl ToRedisArgument for RedisArgument {
+    fn to_redis_argument(&self) -> RedisArgument {
+        self.clone()
+    }
+
+    fn into_redis_argument(self) -> RedisArgument {
+        self
     }
 }
 

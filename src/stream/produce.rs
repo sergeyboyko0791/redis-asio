@@ -1,5 +1,6 @@
 use super::EntryId;
 use crate::{RedisCommand, ToRedisArgument, command};
+use std::collections::HashMap;
 
 pub struct AddOptions {
     /// Stream name
@@ -20,7 +21,7 @@ impl AddOptions {
     }
 }
 
-pub(crate) fn add_command<T>(options: AddOptions, key_values: Vec<(String, T)>) -> RedisCommand
+pub(crate) fn add_command<T>(options: AddOptions, key_values: HashMap<String, T>) -> RedisCommand
     where T: ToRedisArgument {
     let mut cmd = command("XADD").arg(options.stream);
 

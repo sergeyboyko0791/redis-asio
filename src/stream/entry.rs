@@ -2,6 +2,7 @@ use crate::{RedisValue, RedisResult, RedisError, RedisErrorKind, FromRedisValue,
 use std::num::ParseIntError;
 use std::error::Error;
 use std::fmt;
+use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, PartialOrd)]
 pub struct EntryId((u64, u64));
@@ -15,7 +16,7 @@ pub struct StreamEntry {
     /// Note Redis allows to use key as a binary Bulk String
     /// but in the library it is forbidden for easy of use API.
     /// Value may be any of the RedisValue types
-    pub values: Vec<(String, RedisValue)>,
+    pub values: HashMap<String, RedisValue>,
 }
 
 #[derive(PartialEq)]
@@ -25,11 +26,11 @@ pub struct RangeEntry {
     /// Note Redis allows to use key as a binary Bulk String
     /// but in the library it is forbidden for easy of use API.
     /// Value may be any of the RedisValue types
-    pub values: Vec<(String, RedisValue)>,
+    pub values: HashMap<String, RedisValue>,
 }
 
 impl StreamEntry {
-    pub(crate) fn new(stream: String, id: EntryId, values: Vec<(String, RedisValue)>) -> Self {
+    pub(crate) fn new(stream: String, id: EntryId, values: HashMap<String, RedisValue>) -> Self {
         StreamEntry {
             stream,
             id,
@@ -39,7 +40,7 @@ impl StreamEntry {
 }
 
 impl RangeEntry {
-    pub(crate) fn new(id: EntryId, values: Vec<(String, RedisValue)>) -> Self {
+    pub(crate) fn new(id: EntryId, values: HashMap<String, RedisValue>) -> Self {
         RangeEntry {
             id,
             values,
@@ -58,9 +59,9 @@ pub fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> 
     let capacity = streams.len() * LEN_FACTOR;
     let mut stream_entries: Vec<StreamEntry> = Vec::with_capacity(capacity);
 
+    // transform Vec<EntryInfo> to Vec<StreamEntry>
     for StreamInfo { id, entries } in streams.into_iter() {
         for entry in entries.into_iter() {
-            // transform the entry value to the RSEntry
             let stream_entry =
                 StreamEntry::new(id.clone(), EntryId::from_string(entry.id)?, entry.key_values);
 
@@ -77,8 +78,8 @@ pub fn parse_range_entries(value: RedisValue) -> RedisResult<Vec<RangeEntry>> {
 
     let mut result_entries: Vec<RangeEntry> = Vec::with_capacity(entries.len());
 
+    // transform the Vec<EntryInfo> to Vec<RangeEntry>
     for entry in entries.into_iter() {
-        // transform the entry value to the RSEntry
         let entry =
             RangeEntry::new(EntryId::from_string(entry.id)?, entry.key_values);
 
@@ -96,7 +97,7 @@ struct StreamInfo {
 #[derive(Debug)]
 struct EntryInfo {
     id: String,
-    key_values: Vec<(String, RedisValue)>,
+    key_values: HashMap<String, RedisValue>,
 }
 
 pub enum RangeType {
@@ -182,40 +183,11 @@ fn to_redis_error(err: ParseIntError) -> RedisError {
     RedisError::new(RedisErrorKind::ParseError, err.description().into())
 }
 
-impl EntryInfo {
-    fn fill_key_values_from_vec(&mut self, key_values: Vec<RedisValue>) -> RedisResult<()> {
-        // count of keys and values should be even
-        if key_values.len() % 2 != 0 {
-            return Err(RedisError::new(
-                RedisErrorKind::ParseError,
-                "Couldn't parse a Redis Stream Entry (there is no value for key)".to_string()));
-        }
-
-        const KEY_VALUE_CHUNK_LEN: usize = 2;
-        const KEY_POS: usize = 0;
-        const VALUE_POS: usize = 1;
-
-        for chunk in key_values.chunks_exact(KEY_VALUE_CHUNK_LEN) {
-            let key: String = from_redis_value(&chunk[KEY_POS])?;
-            self.key_values.push((key, chunk[VALUE_POS].clone()));
-        }
-        Ok(())
-    }
-}
-
 impl FromRedisValue for EntryInfo {
     fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
-        let (id, key_values): (String, Vec<RedisValue>) = from_redis_value(value)?;
-        let key_value_len = key_values.len() / 2;
+        let (id, key_values): (String, HashMap<String, RedisValue>) = from_redis_value(value)?;
 
-        let mut result
-            = Self {
-            id,
-            key_values: Vec::with_capacity(key_value_len),
-        };
-
-        result.fill_key_values_from_vec(key_values)?;
-        Ok(result)
+        Ok(EntryInfo { id, key_values })
     }
 }
 
@@ -280,25 +252,22 @@ mod tests {
         let result = parse_stream_entries(value).unwrap();
 
         // TODO consider what is better? into() or to_string()
+        let mut entry1: HashMap<String, RedisValue> = HashMap::new();
+        entry1.insert("1key1".to_string(), RedisValue::BulkString(b"1value1".to_vec()));
+        entry1.insert("1key2".to_string(), RedisValue::Int(2));
+
+        let mut entry2: HashMap<String, RedisValue> = HashMap::new();
+        entry2.insert("2key1".to_string(), RedisValue::BulkString(b"2value1".to_vec()));
+        entry2.insert("2key2".to_string(), RedisValue::BulkString(b"2value2".to_vec()));
+        entry2.insert("2key3".to_string(), RedisValue::BulkString(b"2value3".to_vec()));
+
+        let mut entry3: HashMap<String, RedisValue> = HashMap::new();
+        entry3.insert("3key1".to_string(), RedisValue::BulkString(b"3value1".to_vec()));
+
         let origin = vec![
-            StreamEntry::new("stream1".into(),
-                             EntryId((1581870410019, 0)),
-                             vec![
-                                 ("1key1".into(), RedisValue::BulkString(b"1value1".to_vec())),
-                                 ("1key2".into(), RedisValue::Int(2))
-                             ]),
-            StreamEntry::new("stream1".into(),
-                             EntryId((1581870414714, 0)),
-                             vec![
-                                 ("2key1".into(), RedisValue::BulkString(b"2value1".to_vec())),
-                                 ("2key2".into(), RedisValue::BulkString(b"2value2".to_vec())),
-                                 ("2key3".into(), RedisValue::BulkString(b"2value3".to_vec()))
-                             ]),
-            StreamEntry::new("stream2".into(),
-                             EntryId((1581855076637, 0)),
-                             vec![
-                                 ("3key1".into(), RedisValue::BulkString(b"3value1".to_vec()))
-                             ])
+            StreamEntry::new("stream1".into(), EntryId((1581870410019, 0)), entry1),
+            StreamEntry::new("stream1".into(), EntryId((1581870414714, 0)), entry2),
+            StreamEntry::new("stream2".into(), EntryId((1581855076637, 0)), entry3)
         ];
 
         assert_eq!(origin, result);

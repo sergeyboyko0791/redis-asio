@@ -4,11 +4,59 @@ extern crate futures;
 use std::env;
 use std::io;
 use std::net::SocketAddr;
+use std::collections::HashMap;
 use futures::{Future, Stream, Sink};
 use futures::sync::mpsc::{UnboundedSender, unbounded};
 
-use redis_asio::{RedisResult, RedisError, RedisErrorKind};
-use redis_asio::stream::{RedisStream, StreamEntry, EntryId, AckResponse, SubscribeOptions, RedisGroup, TouchGroupOptions, AckOptions};
+use redis_asio::{RedisResult, RedisValue, RedisError, RedisErrorKind, FromRedisValue, from_redis_value};
+use redis_asio::stream::{RedisStream, StreamEntry, EntryId, AckResponse, SubscribeOptions,
+                         RedisGroup, TouchGroupOptions, AckOptions};
+
+#[derive(Debug)]
+struct Message(String);
+
+impl FromRedisValue for Message {
+    fn from_redis_value(value: &RedisValue) -> Result<Self, RedisError> {
+        match value {
+            RedisValue::BulkString(data) => {
+                let string = String::from_utf8(data.clone())
+                    .map_err(|err|
+                        RedisError::new(RedisErrorKind::ParseError,
+                                        format!("Could not parse message: {}", err))
+                    )?;
+                Ok(Message(string))
+            }
+            _ => Err(RedisError::new(RedisErrorKind::ParseError,
+                                     format!("Could not parse message from invalid RedisValue {:?}", value)))
+        }
+    }
+}
+
+impl Message {
+    pub fn from_redis_stream_entry(key_values: &HashMap<String, RedisValue>) -> RedisResult<Self> {
+        if key_values.len() != 2 {
+            return Err(RedisError::new(RedisErrorKind::ParseError,
+                                       "Invalid packet".to_string()));
+        }
+
+        let get_value =
+            |key: &str| match key_values.get(key) {
+                Some(x) => Ok(x),
+                _ => Err(RedisError::new(RedisErrorKind::ParseError,
+                                         "Invalid packet".to_string()))
+            };
+
+        let packet_type: String = from_redis_value(get_value("type")?)?;
+        match packet_type.as_str() {
+            "Message" => {
+                let data: Message = from_redis_value(get_value("data")?)?;
+                Ok(data)
+            }
+            _ => Err(RedisError::new(RedisErrorKind::ParseError,
+                                     "Unknown message type".to_string()))
+        }
+    }
+}
 
 fn main() {
     println!("Consumer example has started");
@@ -28,13 +76,12 @@ fn main() {
     let create_group = RedisStream::connect(&redis_address)
         .and_then(move |con|
             // create group if the one does not exists yet
-            con.touch_group(touch_options)
-        )
+            con.touch_group(touch_options))
         // ignore an error if the group exists already
         .then(|_| -> RedisResult<()> { Ok(()) });
 
     let consumer = create_group
-        .then(move |_| {
+        .and_then(move |_| {
             let manager = RedisStream::connect(&redis_address);
             let consumer = RedisStream::connect(&redis_address);
             consumer.join(manager)
@@ -101,7 +148,14 @@ fn process_stream_entries(acknowledger: UnboundedSender<EntryId>, entries: Vec<S
                           -> RedisResult<()> {
     entries.into_iter()
         .for_each(move |entry| {
-            println!("Received {:?}", &entry.id);
+            let message =
+                Message::from_redis_stream_entry(&entry.values);
+            match message {
+                Ok(message) =>
+                    println!("Received message(ID={:?}): {:?}", entry.id.to_string(), message),
+                Err(err) => eprintln!("{}", err),
+            }
+
             let future = acknowledger.clone()
                 .send(entry.id)
                 .map(|_| ())

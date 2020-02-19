@@ -3,6 +3,8 @@ use std::error::Error;
 use std::fmt;
 use std::cmp::PartialEq;
 use std::str::FromStr;
+use std::collections::HashMap;
+use std::hash::Hash;
 use core::num::ParseIntError;
 use crate::base::RespInternalValue;
 
@@ -115,7 +117,36 @@ impl<T: FromRedisValue> FromRedisValue for Vec<T> {
     }
 }
 
-// TODO make macro and implenent that for (T, ..., T)
+impl<K: FromRedisValue + Eq + Hash, V: FromRedisValue> FromRedisValue for HashMap<K, V> {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
+        match value {
+            RedisValue::Array(key_values) => {
+                const KEY_VALUE_CHUNK_LEN: usize = 2;
+                const KEY_POS: usize = 0;
+                const VALUE_POS: usize = 1;
+
+                // count of keys and values should be evenl
+                if key_values.len() % KEY_VALUE_CHUNK_LEN != 0 {
+                    return Err(conversion_error_from_value(value, "HashMap"));
+                }
+
+                let mut result =
+                    HashMap::with_capacity(key_values.len() / KEY_VALUE_CHUNK_LEN);
+
+                for chunk in key_values.chunks_exact(KEY_VALUE_CHUNK_LEN) {
+                    let key: K = from_redis_value(&chunk[KEY_POS])?;
+                    let value: V = from_redis_value(&chunk[VALUE_POS])?;
+                    result.insert(key, value);
+                }
+
+                Ok(result)
+            }
+            _ => Err(conversion_error_from_value(value, "HashMap"))
+        }
+    }
+}
+
+// TODO make macro and implement that for (T, ..., T)
 impl<T1, T2> FromRedisValue for (T1, T2)
     where T1: FromRedisValue + fmt::Debug,
           T2: FromRedisValue + fmt::Debug {
