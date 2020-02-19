@@ -72,6 +72,7 @@ pub(crate) fn touch_group_command(options: TouchGroupOptions) -> RedisCommand {
         .arg(options.stream)
         .arg(options.group)
         .arg("$")
+        .arg("MKSTREAM") // make an empty stream if there is no such one yet
 }
 
 impl AckResponse {

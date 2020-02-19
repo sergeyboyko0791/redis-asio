@@ -2,6 +2,7 @@ extern crate tokio;
 extern crate futures;
 
 use std::env;
+use std::io;
 use std::net::SocketAddr;
 use futures::{Future, Stream, Sink};
 use futures::future::join_all;
@@ -12,13 +13,17 @@ use redis_asio::{RedisCommand, FromRedisValue, RedisCoreConnection, from_redis_v
 use redis_asio::stream::{RedisStream, StreamEntry, PendingOptions, RangeType, PendingMessage, EntryId, AckResponse, SubscribeOptions, RedisGroup, TouchGroupOptions, AckOptions};
 
 fn main() {
+    println!("Consumer example has started");
+    println!("Please enter a STREAM to listen on");
+    let stream_name = read_stdin();
+    println!("Please enter a GROUP");
+    let group_name = read_stdin();
+    println!("Please enter a CONSUMER");
+    let consumer_name = read_stdin();
+
     let redis_address = env::var("REDIS_URL")
         .unwrap_or("127.0.0.1:6379".to_string())
         .parse::<SocketAddr>().expect("Couldn't parse Redis URl");
-
-    let stream_name: String = "ConsumerTest".to_string();
-    let group_name: String = "MyGroup".to_string();
-    let consumer_name: String = "CustomConsumer".to_string();
 
     let touch_options = TouchGroupOptions::new(stream_name.clone(), group_name.clone());
 
@@ -31,16 +36,6 @@ fn main() {
         .then(|_| -> RedisResult<()> { Ok(()) });
 
     let consumer = create_group
-//        .then(|_: RedisResult<()>|
-//            // create new connection because the previous future can return an error
-//            RedisStream::connect(&redis_address.clone()))
-//        .and_then(move |consumer| {
-//            let manager = RedisStream::connect(&redis_address);
-//            consumer.pending_list(pending_options)
-//                .map(|(consumer, response)| {
-//                    for pending_message in response.into_iter() {}
-//                })
-//        });
         .then(move |_| {
             let manager = RedisStream::connect(&redis_address);
             let consumer = RedisStream::connect(&redis_address);
@@ -78,6 +73,17 @@ fn main() {
     tokio::run(consumer);
 }
 
+fn read_stdin() -> String {
+    let mut value = String::new();
+    io::stdin().read_line(&mut value).expect("Expect a valid string");
+    if value.ends_with("\n") {
+        value.pop().expect("Expect no empty string");
+    }
+
+    assert!(!value.is_empty(), "Expect no empty string");
+    value
+}
+
 fn ack_stream_entry(manager: RedisStream, stream: String, group: String, id_to_ack: EntryId)
                     -> impl Future<Item=RedisStream, Error=RedisError> {
     let options = AckOptions::new(stream.clone(), group.clone(), id_to_ack.clone());
@@ -106,17 +112,3 @@ fn process_stream_entries(acknowledger: UnboundedSender<EntryId>, entries: Vec<S
         });
     Ok(())
 }
-
-//fn on_pending_messages(messages: Vec<PendingMessage>, address: &SocketAddr) {
-//    let requester = RedisStream::connect(address)
-//        .and_then(|requester| {
-//            let (tx, rx) = mpsc::unbounded();
-//        });
-//}
-//
-//fn on_pending_message(requester: RedisStream, message: PendingMessage, messages: &[PendingMessage])
-//                      -> impl Future<Item=(), Error= RedisError>{
-//    requester.read_explicit()
-//}
-
-//fn on_stream_entry()
