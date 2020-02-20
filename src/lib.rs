@@ -27,7 +27,7 @@
 //! # Motivating examples
 //!
 //! ## SET, GET value from cache
-//! ```
+//! ```rust
 //! use std::net::SocketAddr;
 //! use futures::Future;
 //! use redis_asio::{RedisCoreConnection, RedisValue, from_redis_value};
@@ -70,7 +70,7 @@
 //! Request that will be sent to get new entries in the following example:
 //! "XREADGROUP GROUP mygroup Bob BLOCK 0 STREAMS mystream <"
 //!
-//! ```
+//! ```rust
 //! use std::net::SocketAddr;
 //! use futures::{Future, Stream};
 //! use redis_asio::stream::{RedisStream, SubscribeOptions, StreamEntry,
@@ -106,7 +106,7 @@
 //! Request that will be sent to push a specified entry in the following example:
 //! "XADD mystream * type 3 data \"Hello, world\""
 //!
-//! ```
+//! ```rust
 //! use std::net::SocketAddr;
 //! use std::collections::HashMap;
 //! use futures::Future;

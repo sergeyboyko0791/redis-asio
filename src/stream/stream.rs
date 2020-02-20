@@ -146,11 +146,17 @@ impl RedisStream {
             )
     }
 
-    /// The core availability of the library.
-    /// Subscribe specified streams and process any input `StreamEntry`s
-    /// in `for_each()` without repeated XREAD/XREADGROUP requests.
-    /// It is possible by requests hidden from user that are sending
-    /// within the method engine.
+    /// Subscribe to a Redis stream and process all incoming entries.
+    /// Redis Streams requires to send XREAD/XREADGROUP requests every time
+    /// the client receives a response on the previous,
+    /// in other words Redis Streams does not provide an interface to subscribe
+    /// to a Redis stream.
+    ///
+    /// In the Crate the subscription is possible by hidden requests sending
+    /// within the Crate engine.
+    ///
+    /// Request that will be sent to get new entries in the following example:
+    /// "XREADGROUP GROUP mygroup Bob BLOCK 0 STREAMS mystream <"
     ///
     /// # Example
     ///
