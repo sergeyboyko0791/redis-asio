@@ -1,3 +1,6 @@
+//! Base module for low-level request sending and response handling
+//! via RESP protocol.
+
 mod error;
 mod value;
 mod codec;

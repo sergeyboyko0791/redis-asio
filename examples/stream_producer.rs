@@ -11,7 +11,7 @@ use futures::{Future, Stream, Sink};
 use futures::sync::mpsc::{UnboundedReceiver, unbounded};
 
 use redis_asio::{RedisResult, RedisError, RedisErrorKind, IntoRedisArgument, RedisArgument};
-use redis_asio::stream::{RedisStream, TouchGroupOptions, AddOptions};
+use redis_asio::stream::{RedisStream, TouchGroupOptions, SendEntryOptions};
 
 struct Message(String);
 
@@ -80,7 +80,7 @@ fn start_producer(rx: UnboundedReceiver<Message>,
                     RedisError::new(RedisErrorKind::InternalError,
                                     "Something went wrong with UnboundedChannel".to_string()))
                 .fold(producer, move |producer, message| {
-                    let options = AddOptions::new(stream_name.clone());
+                    let options = SendEntryOptions::new(stream_name.clone());
 
                     // serialize the message to pairs of key-value
                     let data = message.into_redis_stream_entry();

@@ -2,26 +2,29 @@ use super::EntryId;
 use crate::{RedisCommand, IntoRedisArgument, command};
 use std::collections::HashMap;
 
-pub struct AddOptions {
+
+/// Set of options that are required by `RedisStream::send_entry()`
+#[derive(Clone)]
+pub struct SendEntryOptions {
     /// Stream name
     pub(crate) stream: String,
     /// Optional explicit entry id
     pub(crate) entry_id: Option<EntryId>,
 }
 
-impl AddOptions {
-    pub fn new(stream: String) -> AddOptions {
+impl SendEntryOptions {
+    pub fn new(stream: String) -> SendEntryOptions {
         let entry_id: Option<EntryId> = None;
-        AddOptions { stream, entry_id }
+        SendEntryOptions { stream, entry_id }
     }
 
-    pub fn with_id(stream: String, entry_id: EntryId) -> AddOptions {
+    pub fn with_id(stream: String, entry_id: EntryId) -> SendEntryOptions {
         let entry_id = Some(entry_id);
-        AddOptions { stream, entry_id }
+        SendEntryOptions { stream, entry_id }
     }
 }
 
-pub(crate) fn add_command<T>(options: AddOptions, key_values: HashMap<String, T>) -> RedisCommand
+pub(crate) fn add_command<T>(options: SendEntryOptions, key_values: HashMap<String, T>) -> RedisCommand
     where T: IntoRedisArgument {
     let mut cmd = command("XADD").arg(options.stream);
 

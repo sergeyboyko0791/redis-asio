@@ -1,6 +1,9 @@
 use super::EntryId;
 use crate::{RedisCommand, RedisResult, command};
 
+
+/// Set of options that are required by `RedisStream::pending_entries()`
+#[derive(Clone)]
 pub struct PendingOptions {
     /// Get pending entries from the following streams with ID greater than the corresponding entry IDs
     pub(crate) streams: Vec<(String, EntryId)>,
@@ -12,17 +15,23 @@ pub struct PendingOptions {
     pub(crate) count: Option<u16>,
 }
 
+/// Set of options that are required by `RedisStream::touch_group()`
+#[derive(Clone)]
 pub struct TouchGroupOptions {
     pub(crate) stream: String,
     pub(crate) group: String,
 }
 
+/// Set of options that are required by `RedisStream::ack_entry()`
+#[derive(Clone)]
 pub struct AckOptions {
     pub(crate) stream: String,
     pub(crate) group: String,
     pub(crate) entry_id: EntryId,
 }
 
+/// Structure that wraps a response on XACK request.
+#[derive(PartialEq, Debug, Clone)]
 pub enum AckResponse {
     Ok,
     NotExists,
@@ -36,7 +45,7 @@ pub(crate) fn ack_entry_command(options: AckOptions) -> RedisCommand {
 }
 
 pub(crate) fn pending_list_command(options: PendingOptions) -> RedisCommand {
-    let mut cmd = command("XGROUPREAD")
+    let mut cmd = command("XREADGROUP")
         .arg("GROUP")
         .arg(options.group)
         .arg(options.consumer);

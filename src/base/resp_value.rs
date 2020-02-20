@@ -1,5 +1,8 @@
 use super::{RedisResult, RedisValue, RedisError, RedisErrorKind};
 
+
+/// Internal set of types that are immediately parsed to and from RESP binary packets.
+/// Represents RESP protocol: "https://redis.io/topics/protocol".
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum RespInternalValue {
     Nil,

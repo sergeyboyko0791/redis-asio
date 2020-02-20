@@ -5,6 +5,7 @@ use futures::{Stream, Future, Sink};
 use futures::sync::mpsc::{channel, Sender, Receiver};
 use futures::Async;
 
+/// Set of options that are required by `RedisStream::subscribe()`
 #[derive(Clone)]
 pub struct SubscribeOptions {
     /// List of listen streams
@@ -13,6 +14,8 @@ pub struct SubscribeOptions {
     pub(crate) group: Option<RedisGroup>,
 }
 
+/// Set of options that are required by `RedisStream::read_explicit()`
+#[derive(Clone)]
 pub struct ReadExplicitOptions {
     /// Get entries from the following streams with ID greater than the corresponding entry IDs
     pub(crate) streams: Vec<(String, EntryId)>,
@@ -20,6 +23,8 @@ pub struct ReadExplicitOptions {
     pub(crate) count: u16,
 }
 
+/// Set of options that are required by `RedisStream::range()`
+#[derive(Clone)]
 pub struct RangeOptions {
     /// Stream name
     pub(crate) stream: String,
@@ -29,6 +34,7 @@ pub struct RangeOptions {
     pub(crate) range: RangeType,
 }
 
+/// Pair of group name and consumer name
 #[derive(Clone)]
 pub struct RedisGroup {
     /// Group name
@@ -37,6 +43,7 @@ pub struct RedisGroup {
     pub(crate) consumer: String,
 }
 
+/// The `Stream<Item=Vec<StreamEntry>, Error=RedisError>` wrapper
 pub struct Subscribe {
     pub(crate) stream: Box<dyn Stream<Item=RedisValue, Error=RedisError> + Send + 'static>,
 }

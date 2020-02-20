@@ -7,7 +7,8 @@ use std::collections::HashMap;
 #[derive(Clone, PartialEq, PartialOrd)]
 pub struct EntryId((u64, u64));
 
-#[derive(PartialEq)]
+/// Structure that wraps a entry received on XREAD/XREADGROUP request.
+#[derive(Clone, PartialEq)]
 pub struct StreamEntry {
     /// Stream name
     pub stream: String,
@@ -19,7 +20,8 @@ pub struct StreamEntry {
     pub values: HashMap<String, RedisValue>,
 }
 
-#[derive(PartialEq)]
+/// Structure that wraps an range entry received on XRANGE request.
+#[derive(Clone, PartialEq)]
 pub struct RangeEntry {
     /// Stream entry id is a simple string "milliseconds-id"
     pub id: EntryId,
@@ -49,7 +51,7 @@ impl RangeEntry {
 }
 
 /// Parse XREAD/XREADGROUP result: RedisValue to vec of StreamEntry
-pub fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> {
+pub(crate) fn parse_stream_entries(value: RedisValue) -> RedisResult<Vec<StreamEntry>> {
     // usually count of entries within one stream is 1,
     // because in finally case we subscribe on only new messages
     const LEN_FACTOR: usize = 1;
@@ -89,17 +91,20 @@ pub fn parse_range_entries(value: RedisValue) -> RedisResult<Vec<RangeEntry>> {
     Ok(result_entries)
 }
 
+/// Internal structure is used to parse RedisValue into StreamEntry
 struct StreamInfo {
     id: String,
     entries: Vec<EntryInfo>,
 }
 
+/// Internal structure is used to parse RedisValue into StreamEntry
 #[derive(Debug)]
 struct EntryInfo {
     id: String,
     key_values: HashMap<String, RedisValue>,
 }
 
+#[derive(Clone)]
 pub enum RangeType {
     Any,
     GreaterThan(EntryId),
@@ -140,6 +145,13 @@ impl fmt::Debug for RangeEntry {
     }
 }
 
+impl fmt::Debug for EntryId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.to_string())?;
+        Ok(())
+    }
+}
+
 impl EntryId {
     pub fn new(ms: u64, id: u64) -> EntryId {
         EntryId((ms, id))
@@ -168,13 +180,6 @@ impl EntryId {
 
     pub fn to_string(&self) -> String {
         format!("{}-{}", (self.0).0, (self.0).1)
-    }
-}
-
-impl fmt::Debug for EntryId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_string())?;
-        Ok(())
     }
 }
 

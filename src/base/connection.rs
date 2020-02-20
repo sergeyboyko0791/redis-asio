@@ -7,12 +7,39 @@ use core::marker::Send as SendMarker;
 use std::error::Error;
 
 
+/// Actual Redis connection converts packets from `RESP` packets into `RedisValue`
+/// and from `RedisCommand` into `RESP` packets.
+///
+/// # Example
+/// ```
+/// use std::net::SocketAddr;
+/// use futures::Future;
+/// use redis_asio::{RedisCoreConnection, RedisValue, from_redis_value};
+///
+/// let address = &"127.0.0.1:6379".parse::<SocketAddr>().unwrap();
+///
+/// let set_req = command("SET").arg("foo").arg(123);
+/// let get_req = command("GET").arg("foo");
+///
+/// let future = RedisCoreConnection::connect(address)
+///     .and_then(move |con| con.send(set_req))
+///     .and_then(|(con, response)| {
+///         assert_eq!(RedisValue::Ok, response, "Expect Ok");
+///         con.send(get_req)
+///     })
+///     .map(move |(_, response)|
+///         assert_eq!(123, from_redis_value(&response).unwrap()))
+///     .map_err(|_| unreachable!());
+///  tokio::run(future);
+/// ```
 pub struct RedisCoreConnection {
     pub(crate) sender: Box<dyn Sink<SinkItem=RedisCommand, SinkError=RedisError> + SendMarker + 'static>,
     pub(crate) receiver: Box<dyn Stream<Item=RespInternalValue, Error=RedisError> + SendMarker + 'static>,
 }
 
 impl RedisCoreConnection {
+    /// Open a connection to Redis server and wrap it into `RedisCoreConnection`,
+    /// that will be available in the future.
     pub fn connect(addr: &SocketAddr) -> impl Future<Item=Self, Error=RedisError> {
         TcpStream::connect(addr)
             .map_err(|err| RedisError::new(RedisErrorKind::ConnectionError, err.description().to_string()))
@@ -31,11 +58,14 @@ impl RedisCoreConnection {
         RedisCoreConnection { sender, receiver }
     }
 
+    /// Send request as a `RedisCommand` and return `Send` represents the future
+    /// `Future<Item=(RedisCoreConnection, RedisValue), Error=RedisError>`
     pub fn send(self, req: RedisCommand) -> Send {
         Send::new(self, req)
     }
 }
 
+/// The `Future<Item=(RedisCoreConnection, RedisValue), Error=RedisError>` wrapper
 pub struct Send {
     sender: Option<Box<dyn Sink<SinkItem=RedisCommand, SinkError=RedisError> + SendMarker + 'static>>,
     receiver: Option<Box<dyn Stream<Item=RespInternalValue, Error=RedisError> + SendMarker + 'static>>,
@@ -84,35 +114,5 @@ impl Future for Send {
             _ => Err(RedisError::new(RedisErrorKind::ConnectionError,
                                      "Connection has closed before an answer came".to_string()))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    use crate::{from_redis_value, command};
-
-    #[test]
-    fn test_get_set() {
-        let now = SystemTime::now();
-        let since_the_epoch = now.duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
-        let origin_value = since_the_epoch.as_millis() as i64;
-
-        let set_req = command("set").arg("foo").arg(origin_value);
-        let get_req = command("get").arg("foo");
-
-        let ft =
-            RedisCoreConnection::connect(&"127.0.0.1:6379".parse::<SocketAddr>().unwrap())
-                .and_then(move |con| con.send(set_req))
-                .and_then(|(con, response)| {
-                    assert_eq!(RedisValue::Ok, response, "Expect Ok");
-                    con.send(get_req)
-                })
-                .map(move |(_, response)|
-                    assert_eq!(origin_value, from_redis_value(&response).unwrap()))
-                .map_err(|_| unreachable!());
-        tokio::run(ft);
     }
 }

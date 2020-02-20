@@ -8,6 +8,9 @@ use std::hash::Hash;
 use core::num::ParseIntError;
 use crate::base::RespInternalValue;
 
+
+/// Set of types that are parsed to and from RESP binary packets.
+/// Represents RESP protocol: "https://redis.io/topics/protocol".
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RedisValue {
     Nil,
@@ -40,6 +43,40 @@ impl RedisValue {
     }
 }
 
+/// Trait interface requires to implement method to convert `RedisValue`
+/// into base type.
+///
+/// # Example
+///
+/// ```
+/// use redis_asio::{RedisResult, RedisError, RedisErrorKind, RedisValue,
+///                  FromRedisValue, from_redis_value};
+///
+/// #[derive(PartialEq, Debug)]
+/// struct ClientStruct{
+///     data: String,
+/// }
+///
+/// impl FromRedisValue for ClientStruct {
+///     fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
+///         match value {
+///             RedisValue::BulkString(data) => {
+///                 let data = String::from_utf8(data.clone())
+///                     .map_err(|err|
+///                         RedisError::new(RedisErrorKind::ParseError,
+///                                         "Cannot parse".to_string()))?;
+///                     Ok(ClientStruct {data})
+///             }
+///             _ => Err(RedisError::new(RedisErrorKind::ParseError,
+///                      "Cannot parse".to_string()))
+///         }
+///     }
+/// }
+///
+/// let redis_value = RedisValue::BulkString(b"some data".to_vec());
+/// let origin = ClientStruct {data: "some data".to_string()};
+/// assert_eq!(origin, from_redis_value::<ClientStruct>(&redis_value).unwrap());
+/// ```
 pub trait FromRedisValue: Sized {
     fn from_redis_value(value: &RedisValue) -> RedisResult<Self>;
 
@@ -48,6 +85,17 @@ pub trait FromRedisValue: Sized {
     }
 }
 
+/// Convert `RedisValue` into `T` value.
+///
+/// # Example
+/// ```
+/// use redis_asio::{RedisValue, from_redis_value};
+///
+/// let redis_value = RedisValue::BulkString(b"some data".to_vec());
+/// let origin = "some data".to_string();
+/// let result : String = from_redis_value::<String>(&redis_value).unwrap();
+/// assert_eq!(origin, result);
+/// ```
 pub fn from_redis_value<T: FromRedisValue>(value: &RedisValue) -> RedisResult<T> {
     T::from_redis_value(value)
         .map_err(|err|

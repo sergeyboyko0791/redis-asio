@@ -11,7 +11,7 @@ pub enum RedisErrorKind {
     InvalidOptions,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RedisError {
     pub error: RedisErrorKind,
     desc: String,

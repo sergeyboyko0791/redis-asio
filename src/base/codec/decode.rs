@@ -137,9 +137,8 @@ fn parse_array(data: &[u8]) -> RedisResult<OptParseResult<RespInternalValue>> {
         };
 
     if array_len < 0 {
-        return Err(RedisError::new(
-            RedisErrorKind::ParseError,
-            "Array length cannot be negative".to_string()));
+        // TODO add conversion from Nil to Vec and HashMap
+        return Ok(Some(ParseResult { value: RespInternalValue::Nil, value_src_len: len_len }));
     }
 
     let array_len = array_len as usize;
