@@ -7,22 +7,17 @@ use futures::Async;
 
 #[derive(Clone)]
 pub struct SubscribeOptions {
-    /// Stream name
-    /// TODO change to vec
-    pub(crate) stream: String,
+    /// List of listen streams
+    pub(crate) streams: Vec<String>,
     /// Optional group info
     pub(crate) group: Option<RedisGroup>,
 }
 
 pub struct ReadExplicitOptions {
-    /// Stream name
-    pub(crate) stream: String,
-    /// Optional group info
-    pub(crate) group: Option<RedisGroup>,
+    /// Get entries from the following streams with ID greater than the corresponding entry IDs
+    pub(crate) streams: Vec<(String, EntryId)>,
     /// Max count of entries
     pub(crate) count: u16,
-    /// Get entries with ID greater than the start_id
-    pub(crate) start_id: EntryId,
 }
 
 pub struct RangeOptions {
@@ -69,27 +64,25 @@ impl Stream for Subscribe {
 }
 
 impl SubscribeOptions {
-    pub fn new(stream: String) -> SubscribeOptions {
+    pub fn new(stream: Vec<String>) -> SubscribeOptions {
         let group: Option<RedisGroup> = None;
-        SubscribeOptions { stream, group }
+        SubscribeOptions { streams: stream, group }
     }
 
-    pub fn with_group(stream: String, group: RedisGroup) -> SubscribeOptions {
+    pub fn with_group(stream: Vec<String>, group: RedisGroup) -> SubscribeOptions {
         let group = Some(group);
-        SubscribeOptions { stream, group }
+        SubscribeOptions { streams: stream, group }
     }
 }
 
 impl ReadExplicitOptions {
-    pub fn new(stream: String, count: u16, start_id: EntryId) -> ReadExplicitOptions {
-        let group: Option<RedisGroup> = None;
-        ReadExplicitOptions { stream, group, count, start_id }
+    pub fn new(stream: String, start_id: EntryId, count: u16) -> ReadExplicitOptions {
+        let streams = vec![(stream, start_id)];
+        ReadExplicitOptions { streams, count }
     }
 
-    pub fn with_group(stream: String, group: RedisGroup, count: u16, start_id: EntryId)
-                      -> ReadExplicitOptions {
-        let group = Some(group);
-        ReadExplicitOptions { stream, group, count, start_id }
+    pub fn add_stream(&mut self, stream: String, start_id: EntryId) {
+        self.streams.push((stream, start_id))
     }
 }
 
@@ -146,7 +139,7 @@ pub(crate) fn subscribe<F, T>(from_srv: F, to_srv: T, options: SubscribeOptions)
 
 pub(crate) fn subscribe_cmd(options: SubscribeOptions) -> RedisCommand
 {
-    let SubscribeOptions { stream, group } = options;
+    let SubscribeOptions { streams, group } = options;
 
     // receive only new messages (specifier is different for XREAD and XREADGROUP)
     let id_specifier = match &group {
@@ -154,23 +147,50 @@ pub(crate) fn subscribe_cmd(options: SubscribeOptions) -> RedisCommand
         _ => "$"
     };
 
-    xread_cmd_from(group)
-        .arg("BLOCK")
-        .arg("0") // block until next pkt
-        .arg("STREAMS")
-        .arg(stream.as_str())
-        .arg(id_specifier)
+    let mut cmd =
+        match &group {
+            Some(_) => command("XREADGROUP"),
+            _ => command("XREAD"),
+        };
+
+    if let Some(RedisGroup { group, consumer }) = group {
+        cmd.arg_mut("GROUP");
+        cmd.arg_mut(group.as_str());
+        cmd.arg_mut(consumer.as_str());
+    }
+
+    let mut cmd =
+        cmd.arg("BLOCK")
+            .arg("0") // block until next pkt
+            .arg("STREAMS");
+
+    let mut ids_cmd = RedisCommand::new();
+    for stream in streams.into_iter() {
+        cmd.arg_mut(stream);
+        ids_cmd.arg_mut(id_specifier);
+    }
+
+    cmd.append(ids_cmd);
+    cmd
 }
 
 pub(crate) fn read_explicit_cmd(options: ReadExplicitOptions) -> RedisCommand
 {
-    let ReadExplicitOptions { stream, group, count, start_id } = options;
-    xread_cmd_from(group)
-        .arg("COUNT")
-        .arg(count as i64)
-        .arg("STREAMS")
-        .arg(stream.as_str())
-        .arg(start_id.to_string())
+    let ReadExplicitOptions { streams, count } = options;
+
+    let mut cmd =
+        command("XREAD")
+            .arg("COUNT")
+            .arg(count as i64)
+            .arg("STREAMS");
+    let mut ids_cmd = RedisCommand::new();
+    for (stream, start_id) in streams.into_iter() {
+        cmd.arg_mut(stream);
+        ids_cmd.arg_mut(start_id.to_string());
+    }
+
+    cmd.append(ids_cmd);
+    cmd
 }
 
 pub(crate) fn range_cmd(options: RangeOptions) -> RedisCommand
@@ -194,7 +214,7 @@ fn fwd_from_channel_to_srv<T>(to_srv: T,
     where T: Sink<SinkItem=RedisCommand, SinkError=RedisError> + Send + 'static {
     rx
         .map_err(|_| RedisError::new(RedisErrorKind::InternalError,
-                                     "Cannot read from internal channel".into()))
+                                     "Cannot read from internal channel".to_string()))
         .fold(to_srv, move |to_srv, msg| {
             match msg {
                 StreamInternalCommand::ListenNextMessage =>
@@ -225,19 +245,4 @@ fn process_from_srv_and_notify_channel<F>(from_srv: F,
                     RedisValue::from_resp_value(msg)
                 })
         })
-}
-
-fn xread_cmd_from(group: Option<RedisGroup>) -> RedisCommand {
-    let mut cmd =
-        match &group {
-            Some(_) => command("XREADGROUP"),
-            _ => command("XREAD"),
-        };
-
-    if let Some(RedisGroup { group, consumer }) = group {
-        cmd.arg_mut("GROUP");
-        cmd.arg_mut(group.as_str());
-        cmd.arg_mut(consumer.as_str());
-    }
-    cmd
 }

@@ -145,7 +145,6 @@ impl EntryId {
         EntryId((ms, id))
     }
 
-    // TODO replace it to the FromRedisValue trait implementation
     // Parse the Redis Stream Entry as pair: <milliseconds, id>
     pub(crate) fn from_string(id: String) -> RedisResult<EntryId> {
         const ENTRY_ID_CHUNK_LEN: usize = 2;
@@ -180,7 +179,7 @@ impl fmt::Debug for EntryId {
 }
 
 fn to_redis_error(err: ParseIntError) -> RedisError {
-    RedisError::new(RedisErrorKind::ParseError, err.description().into())
+    RedisError::new(RedisErrorKind::ParseError, err.description().to_string())
 }
 
 impl FromRedisValue for EntryInfo {
@@ -251,7 +250,6 @@ mod tests {
 
         let result = parse_stream_entries(value).unwrap();
 
-        // TODO consider what is better? into() or to_string()
         let mut entry1: HashMap<String, RedisValue> = HashMap::new();
         entry1.insert("1key1".to_string(), RedisValue::BulkString(b"1value1".to_vec()));
         entry1.insert("1key2".to_string(), RedisValue::Int(2));
@@ -265,9 +263,9 @@ mod tests {
         entry3.insert("3key1".to_string(), RedisValue::BulkString(b"3value1".to_vec()));
 
         let origin = vec![
-            StreamEntry::new("stream1".into(), EntryId((1581870410019, 0)), entry1),
-            StreamEntry::new("stream1".into(), EntryId((1581870414714, 0)), entry2),
-            StreamEntry::new("stream2".into(), EntryId((1581855076637, 0)), entry3)
+            StreamEntry::new("stream1".to_string(), EntryId((1581870410019, 0)), entry1),
+            StreamEntry::new("stream1".to_string(), EntryId((1581870414714, 0)), entry2),
+            StreamEntry::new("stream2".to_string(), EntryId((1581855076637, 0)), entry3)
         ];
 
         assert_eq!(origin, result);

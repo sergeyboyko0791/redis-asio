@@ -1,5 +1,5 @@
 use crate::{RedisValue, RedisCoreConnection, RedisError, RedisErrorKind,
-            ToRedisArgument, from_redis_value};
+            IntoRedisArgument, from_redis_value};
 use super::*;
 
 use std::error::Error;
@@ -21,7 +21,7 @@ impl RedisStream {
 
     pub fn send_entry<T>(self, options: AddOptions, key_values: HashMap<String, T>)
                          -> impl Future<Item=(RedisStream, EntryId), Error=RedisError> + Send + 'static
-        where T: ToRedisArgument {
+        where T: IntoRedisArgument {
         self.connection.send(add_command(options, key_values))
             .and_then(|(connection, response)| {
                 let entry_id_string = from_redis_value(&response)?;

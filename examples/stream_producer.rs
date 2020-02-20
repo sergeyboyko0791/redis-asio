@@ -10,16 +10,12 @@ use std::collections::HashMap;
 use futures::{Future, Stream, Sink};
 use futures::sync::mpsc::{UnboundedReceiver, unbounded};
 
-use redis_asio::{RedisResult, RedisError, RedisErrorKind, ToRedisArgument, RedisArgument};
+use redis_asio::{RedisResult, RedisError, RedisErrorKind, IntoRedisArgument, RedisArgument};
 use redis_asio::stream::{RedisStream, TouchGroupOptions, AddOptions};
 
 struct Message(String);
 
-impl ToRedisArgument for Message {
-    fn to_redis_argument(&self) -> RedisArgument {
-        RedisArgument::String(self.0.clone())
-    }
-
+impl IntoRedisArgument for Message {
     fn into_redis_argument(self) -> RedisArgument {
         RedisArgument::String(self.0)
     }

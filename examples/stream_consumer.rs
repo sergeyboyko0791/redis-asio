@@ -16,7 +16,7 @@ use redis_asio::stream::{RedisStream, StreamEntry, EntryId, AckResponse, Subscri
 struct Message(String);
 
 impl FromRedisValue for Message {
-    fn from_redis_value(value: &RedisValue) -> Result<Self, RedisError> {
+    fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
         match value {
             RedisValue::BulkString(data) => {
                 let string = String::from_utf8(data.clone())
@@ -104,7 +104,7 @@ fn main() {
             tokio::spawn(ack_entry);
 
             let group = RedisGroup::new(group_name, consumer_name);
-            let options = SubscribeOptions::with_group(stream_name, group);
+            let options = SubscribeOptions::with_group(vec![stream_name], group);
 
             let process_entry =
                 connection.subscribe(options)
@@ -113,7 +113,7 @@ fn main() {
                             process_stream_entries(tx.clone(), entries)));
             process_entry
         })
-        .map_err(|err| println!("Something went wrong: {:?}", err));
+        .map_err(|err| eprintln!("Something went wrong: {:?}", err));
 
     tokio::run(consumer);
 }
@@ -138,7 +138,7 @@ fn ack_stream_entry(manager: RedisStream, stream: String, group: String, id_to_a
             match response {
                 AckResponse::Ok => println!("{:?} is acknowledged", id_to_ack.to_string()),
                 AckResponse::NotExists =>
-                    println!("Couldn't acknowledge {:?}", id_to_ack.to_string())
+                    eprintln!("Couldn't acknowledge {:?}", id_to_ack.to_string())
             };
             manager
         })
@@ -153,7 +153,11 @@ fn process_stream_entries(acknowledger: UnboundedSender<EntryId>, entries: Vec<S
             match message {
                 Ok(message) =>
                     println!("Received message(ID={:?}): {:?}", entry.id.to_string(), message),
-                Err(err) => eprintln!("{}", err),
+                Err(err) => {
+                    eprintln!("{}", err);
+                    // do not acknowledge the message
+                    return;
+                }
             }
 
             let future = acknowledger.clone()

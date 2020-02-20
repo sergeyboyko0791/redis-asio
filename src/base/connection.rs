@@ -15,11 +15,8 @@ pub struct RedisCoreConnection {
 impl RedisCoreConnection {
     pub fn connect(addr: &SocketAddr) -> impl Future<Item=Self, Error=RedisError> {
         TcpStream::connect(addr)
-            .map_err(|err| RedisError::new(RedisErrorKind::ConnectionError, err.description().into()))
+            .map_err(|err| RedisError::new(RedisErrorKind::ConnectionError, err.description().to_string()))
             .map(|stream| {
-                // TODO use tokio_codec::Decoder::framed instead
-//                let (tx, rx) = stream.framed(RedisCodec).split();
-//                let (tx, rx) = Decoder::framed(RedisCodec, stream).split();
                 let codec = RedisCodec;
                 let (tx, rx) = codec.framed(stream).split();
                 Self::new(tx, rx)

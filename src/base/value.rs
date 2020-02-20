@@ -19,8 +19,6 @@ pub enum RedisValue {
 }
 
 impl RedisValue {
-    //TODO add maybe to_resp_value and corresponding methods for RespValue to RedisValue
-
     pub(crate) fn from_resp_value(resp_value: RespInternalValue) -> RedisResult<RedisValue> {
         match resp_value {
             RespInternalValue::Nil => Ok(RedisValue::Nil),

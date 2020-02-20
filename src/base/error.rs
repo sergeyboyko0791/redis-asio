@@ -17,7 +17,6 @@ pub struct RedisError {
     desc: String,
 }
 
-// TODO rename all Result<T, RedisCoreError> uses to the type
 pub type RedisResult<T> = Result<T, RedisError>;
 
 impl RedisError {

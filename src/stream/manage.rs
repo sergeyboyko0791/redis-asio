@@ -2,14 +2,12 @@ use super::EntryId;
 use crate::{RedisCommand, RedisResult, command};
 
 pub struct PendingOptions {
-    /// Stream name.
-    pub(crate) stream: String,
+    /// Get pending entries from the following streams with ID greater than the corresponding entry IDs
+    pub(crate) streams: Vec<(String, EntryId)>,
     /// Group name.
     pub(crate) group: String,
     /// Consumer name.
     pub(crate) consumer: String,
-    /// Get entries with ID greater than the start_id
-    pub(crate) start_id: EntryId,
     /// Max count of entries. All pending entries will be requested ff the values is None.
     pub(crate) count: Option<u16>,
 }
@@ -46,10 +44,15 @@ pub(crate) fn pending_list_command(options: PendingOptions) -> RedisCommand {
         cmd.arg_mut(count);
     }
 
+    cmd.arg_mut("STREAMS");
+    let mut ids_cmd = RedisCommand::new();
+    for (stream, start_id) in options.streams {
+        cmd.arg_mut(stream);
+        ids_cmd.arg_mut(start_id.to_string());
+    }
+
+    cmd.append(ids_cmd);
     cmd
-        .arg("STREAMS")
-        .arg(options.stream)
-        .arg(options.start_id.to_string())
 }
 
 pub(crate) fn touch_group_command(options: TouchGroupOptions) -> RedisCommand {
@@ -73,14 +76,20 @@ impl AckResponse {
 impl PendingOptions {
     pub fn new(stream: String, group: String, consumer: String, start_id: EntryId)
                -> RedisResult<Self> {
+        let streams = vec![(stream, start_id)];
         let count: Option<u16> = None;
-        Ok(PendingOptions { stream, group, consumer, start_id, count })
+        Ok(PendingOptions { streams, group, consumer, count })
     }
 
     pub fn with_count(stream: String, group: String, consumer: String, start_id: EntryId, count: u16)
                       -> RedisResult<Self> {
+        let streams = vec![(stream, start_id)];
         let count = Some(count);
-        Ok(PendingOptions { stream, group, consumer, start_id, count })
+        Ok(PendingOptions { streams, group, consumer, count })
+    }
+
+    pub fn add_stream(&mut self, stream: String, start_id: EntryId) {
+        self.streams.push((stream, start_id))
     }
 }
 
