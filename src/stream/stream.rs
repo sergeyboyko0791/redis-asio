@@ -33,7 +33,7 @@ impl RedisStream {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use std::collections::HashMap;
     /// use futures::Future;
@@ -74,7 +74,7 @@ impl RedisStream {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use std::collections::HashMap;
     /// use futures::Future;
@@ -114,7 +114,7 @@ impl RedisStream {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use futures::Future;
     /// use redis_asio::stream::{RedisStream, RangeOptions, RangeType, RangeEntry};
@@ -160,7 +160,7 @@ impl RedisStream {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use futures::{Future, Stream};
     /// use redis_asio::stream::{RedisStream, SubscribeOptions, StreamEntry,
@@ -204,7 +204,7 @@ impl RedisStream {
     /// Acknowledge an entry by its ID.
     ///
     /// # Example
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use futures::{Future, Stream};
     /// use redis_asio::stream::{RedisStream, AckOptions, AckResponse, EntryId};
@@ -241,7 +241,7 @@ impl RedisStream {
     /// Get entries that was not acknowledged but was sent to specified consumer.
     ///
     /// # Example
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use futures::Future;
     /// use redis_asio::stream::{RedisStream, PendingOptions, StreamEntry, EntryId};
@@ -277,7 +277,7 @@ impl RedisStream {
     /// Try to create a group. If the group exists already, do not return an error.
     ///
     /// # Example
-    /// ```
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use futures::Future;
     /// use redis_asio::stream::{RedisStream, TouchGroupOptions, StreamEntry,

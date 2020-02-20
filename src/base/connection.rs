@@ -11,10 +11,10 @@ use std::error::Error;
 /// and from `RedisCommand` into `RESP` packets.
 ///
 /// # Example
-/// ```
+/// ```rust,no_run
 /// use std::net::SocketAddr;
 /// use futures::Future;
-/// use redis_asio::{RedisCoreConnection, RedisValue, from_redis_value};
+/// use redis_asio::{RedisCoreConnection, RedisValue, command, from_redis_value};
 ///
 /// let address = &"127.0.0.1:6379".parse::<SocketAddr>().unwrap();
 ///
