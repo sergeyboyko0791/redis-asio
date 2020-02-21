@@ -15,6 +15,8 @@ use redis_asio::stream::{RedisStream, StreamEntry, EntryId, AckResponse, Subscri
 #[derive(Debug)]
 struct Message(String);
 
+/// Implements the trait to allow implicit conversion from RedisValue to Message
+/// via from_redis_value()
 impl FromRedisValue for Message {
     fn from_redis_value(value: &RedisValue) -> RedisResult<Self> {
         match value {
@@ -24,6 +26,7 @@ impl FromRedisValue for Message {
                         RedisError::new(RedisErrorKind::ParseError,
                                         format!("Could not parse message: {}", err))
                     )?;
+                // Construct a Message from received data
                 Ok(Message(string))
             }
             _ => Err(RedisError::new(RedisErrorKind::ParseError,
@@ -33,7 +36,10 @@ impl FromRedisValue for Message {
 }
 
 impl Message {
-    pub fn from_redis_stream_entry(key_values: &HashMap<String, RedisValue>) -> RedisResult<Self> {
+    /// Tries to convert a Message from HashMap<String, RedisValue> (represents a Redis Stream entry).
+    /// The entry should have the following structure:
+    /// "type Message data \"Some data\""
+    fn from_redis_stream_entry(key_values: &HashMap<String, RedisValue>) -> RedisResult<Self> {
         if key_values.len() != 2 {
             return Err(RedisError::new(RedisErrorKind::ParseError,
                                        "Invalid packet".to_string()));
@@ -73,23 +79,35 @@ fn main() {
 
     let touch_options = TouchGroupOptions::new(stream_name.clone(), group_name.clone());
 
+    // Try to create a group.
+    // If the group exists already, the future will not be set into an error.
+    // The create_group variable is the Future<Item=(), Error=()>.
     let create_group = RedisStream::connect(&redis_address)
         .and_then(move |con|
-            // create group if the one does not exists yet
+            // Create group if the one does not exists yet
             con.touch_group(touch_options))
-        // ignore an error if the group exists already
         .then(|_| -> RedisResult<()> { Ok(()) });
 
+    // Start the consuming after the group has been checked.
+    //
+    // Note nothing will happen if the previous future has failed.
+    // The consumer variable in a result is the Future<Item=(), Error=()>.
+    // The Item and Error are required by tokio::run().
     let consumer = create_group
         .and_then(move |_| {
+            // Create two connections to the Redis Server:
+            // first will be used for managing (send Acknowledge request),
+            // second will be used for receive entries from Redis Server.
             let manager = RedisStream::connect(&redis_address);
             let consumer = RedisStream::connect(&redis_address);
             consumer.join(manager)
         })
         .and_then(move |(connection, manager)| {
+            // Create an unbounded channel to allow the consumer notifies the manager
+            // about received and unacknowledged yet entries.
             let (tx, rx) = unbounded::<EntryId>();
 
-            // copy of stream_name and group_name to move it into ack_entry future
+            // Copy of stream_name and group_name to move it into ack_entry future.
             let stream = stream_name.clone();
             let group = group_name.clone();
 
@@ -97,20 +115,26 @@ fn main() {
                 .map_err(|_|
                     RedisError::new(RedisErrorKind::InternalError,
                                     "Something went wrong with UnboundedChannel".to_string()))
+                // Use fold() to redirect notification from the channel receiver (rx) to the manager.
                 .fold(manager, move |manager, id_to_ack|
                     ack_stream_entry(manager, stream.clone(), group.clone(), id_to_ack))
                 .map(|_| ())
                 .map_err(|_| ());
+
+            // Spawn the ack_entry future to be handled separately from the process_entry future.
             tokio::spawn(ack_entry);
 
             let group = RedisGroup::new(group_name, consumer_name);
             let options = SubscribeOptions::with_group(vec![stream_name], group);
 
+            // Subscribe to a Redis stream, processes any incoming entries and sends
+            // entry ids of success processed entries to the manager via the channel sender (tx).
             let process_entry =
                 connection.subscribe(options)
                     .and_then(move |subscribe|
                         subscribe.for_each(move |entries|
                             process_stream_entries(tx.clone(), entries)));
+            // Return and run later the process_entry future.
             process_entry
         })
         .map_err(|err| eprintln!("Something went wrong: {:?}", err));
@@ -160,6 +184,7 @@ fn process_stream_entries(acknowledger: UnboundedSender<EntryId>, entries: Vec<S
                 }
             }
 
+            // Notifies the manager about the received and processed entry.
             let future = acknowledger.clone()
                 .send(entry.id)
                 .map(|_| ())
