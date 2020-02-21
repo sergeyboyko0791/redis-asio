@@ -1,9 +1,14 @@
 [package]
 name = "redis-asio"
-version = "0.1.0"
+version = "0.1.0-alpha"
 authors = ["bso <sergey.boyko0791@gmail.com>"]
 description = "Asynchronous Redis driver based on tokio"
 edition = "2018"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/sergeyboyko0791/redis-asio"
+repository = "https://github.com/sergeyboyko0791/redis-asio.git"
+keywords = ["redis", "stream", "tokio", "asynchronous"]
+categories = ["api-bindings", "asynchronous", "network-programming"]
 
 [dependencies]
 serde = "1.0"
